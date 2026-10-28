@@ -2,11 +2,25 @@
 import { useState } from "react";
 import Navigation from "./components/Navigation";
 
+interface SearchSource {
+  content: string;
+  metadata?: {
+    source?: string;
+    file_name?: string;
+  };
+}
+
+interface SearchResponse {
+  answer?: string;
+  error?: string;
+  sources?: SearchSource[];
+}
+
 export default function Home() {
   const [query, setQuery] = useState("");
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
-  const [sources, setSources] = useState<any[]>([]);
+  const [sources, setSources] = useState<SearchSource[]>([]);
 
   const handleSearch = async () => {
     if (!query.trim()) return;
@@ -19,15 +33,15 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as SearchResponse;
       if (data.error) {
         setAnswer(`Error: ${data.error}`);
       } else {
         setAnswer(data.answer || "No answer generated");
         setSources(data.sources || []);
       }
-    } catch (error: any) {
-      setAnswer(`Error: ${error.message}`);
+    } catch (error) {
+      setAnswer(`Error: ${error instanceof Error ? error.message : "Search failed"}`);
     } finally {
       setLoading(false);
     }

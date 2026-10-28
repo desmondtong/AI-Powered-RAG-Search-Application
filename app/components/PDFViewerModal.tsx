@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 interface PDFViewerModalProps {
   isOpen: boolean;
@@ -19,53 +19,13 @@ export default function PDFViewerModal({
   isPDF = true,
 }: PDFViewerModalProps) {
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"preview" | "content">("preview");
+  const [loading, setLoading] = useState(isPDF);
+  const [activeTab, setActiveTab] = useState<"preview" | "content">(isPDF ? "preview" : "content");
   const [text, setText] = useState<string>("");
   const [textLoading, setTextLoading] = useState(false);
   const [textError, setTextError] = useState<string | null>(null);
 
-  useEffect(() => {
-    document.body.style.overflow = isOpen ? "hidden" : "unset";
-    if (isOpen) {
-      setError(null);
-      setLoading(true);
-      setActiveTab(isPDF ? "preview" : "content");
-      setText("");
-      setTextError(null);
-    }
-    return () => {
-      document.body.style.overflow = "unset";
-    };
-  }, [isOpen, isPDF]);
-
-  useEffect(() => {
-    if (isOpen && documentId && activeTab === "content" && !text && !textLoading && !textError) {
-      fetchDocumentText();
-    }
-  }, [isOpen, documentId, activeTab, text, textLoading, textError]);
-
-  useEffect(() => {
-    if (isOpen && fileUrl && isPDF) {
-      fetch(fileUrl, { method: "GET", headers: { Accept: "application/json" } })
-        .then(async (res) => {
-          if (res.headers.get("content-type")?.includes("application/json")) {
-            const data = await res.json();
-            throw new Error(data.error || "File not available");
-          }
-          if (!res.ok) throw new Error(`Failed to load: ${res.status}`);
-          setLoading(false);
-        })
-        .catch((err) => {
-          setError(err.message || "Failed to load PDF");
-          setLoading(false);
-        });
-    } else if (isOpen && !isPDF) {
-      setLoading(false);
-    }
-  }, [isOpen, fileUrl, isPDF]);
-
-  const fetchDocumentText = async () => {
+  const fetchDocumentText = useCallback(async () => {
     if (!documentId) return;
     setTextLoading(true);
     setTextError(null);
@@ -82,7 +42,49 @@ export default function PDFViewerModal({
     } finally {
       setTextLoading(false);
     }
-  };
+  }, [documentId]);
+
+  useEffect(() => {
+    document.body.style.overflow = isOpen ? "hidden" : "unset";
+    return () => {
+      document.body.style.overflow = "unset";
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && documentId && activeTab === "content" && !text && !textLoading && !textError) {
+      void Promise.resolve().then(fetchDocumentText);
+    }
+  }, [isOpen, documentId, activeTab, text, textLoading, textError, fetchDocumentText]);
+
+  useEffect(() => {
+    if (!isOpen || !isPDF) {
+      return;
+    }
+
+    if (fileUrl) {
+      const controller = new AbortController();
+
+      fetch(fileUrl, { method: "GET", headers: { Accept: "application/json" }, signal: controller.signal })
+        .then(async (res) => {
+          if (res.headers.get("content-type")?.includes("application/json")) {
+            const data = await res.json();
+            throw new Error(data.error || "File not available");
+          }
+          if (!res.ok) throw new Error(`Failed to load: ${res.status}`);
+          setLoading(false);
+        })
+        .catch((err) => {
+          if (err instanceof DOMException && err.name === "AbortError") {
+            return;
+          }
+          setError(err.message || "Failed to load PDF");
+          setLoading(false);
+        });
+
+      return () => controller.abort();
+    }
+  }, [isOpen, fileUrl, isPDF]);
 
   if (!isOpen) return null;
 

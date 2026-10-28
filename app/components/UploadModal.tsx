@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface UploadModalProps {
   isOpen: boolean;
@@ -11,17 +11,23 @@ export default function UploadModal({ isOpen, onClose, onUploadSuccess }: Upload
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     document.body.style.overflow = isOpen ? "hidden" : "unset";
-    if (!isOpen) {
-      setFile(null);
-      setMessage(null);
-    }
     return () => {
       document.body.style.overflow = "unset";
     };
   }, [isOpen]);
+
+  const resetAndClose = () => {
+    setFile(null);
+    setMessage(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+    onClose();
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -56,16 +62,18 @@ export default function UploadModal({ isOpen, onClose, onUploadSuccess }: Upload
           text: `File "${data.fileName}" uploaded successfully! Processed ${data.chunks} chunks.`,
         });
         setFile(null);
-        (document.getElementById("upload-file-input") as HTMLInputElement)?.setAttribute("value", "");
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
         setTimeout(() => {
           onUploadSuccess?.();
-          onClose();
+          resetAndClose();
         }, 1500);
       } else {
         setMessage({ type: "error", text: data.error || "Upload failed" });
       }
-    } catch (error: any) {
-      setMessage({ type: "error", text: error.message || "Upload failed" });
+    } catch (error) {
+      setMessage({ type: "error", text: error instanceof Error ? error.message : "Upload failed" });
     } finally {
       setUploading(false);
     }
@@ -74,7 +82,10 @@ export default function UploadModal({ isOpen, onClose, onUploadSuccess }: Upload
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4"
+      onClick={resetAndClose}
+    >
       <div
         className="relative bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
@@ -82,7 +93,7 @@ export default function UploadModal({ isOpen, onClose, onUploadSuccess }: Upload
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
           <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">Upload Document</h2>
           <button
-            onClick={onClose}
+            onClick={resetAndClose}
             className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
             aria-label="Close"
           >
@@ -102,6 +113,7 @@ export default function UploadModal({ isOpen, onClose, onUploadSuccess }: Upload
             </label>
             <input
               id="upload-file-input"
+              ref={fileInputRef}
               type="file"
               accept=".pdf,.docx,.txt"
               onChange={handleFileChange}

@@ -1,14 +1,26 @@
-import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { getErrorMessage } from "@/app/lib/errors";
+import { getSupabaseAdminClient } from "@/app/lib/supabaseServer";
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY!;
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || anonKey;
-const supabase = createClient(url, anonKey);
-const supabaseStorage = createClient(url, serviceKey);
+interface DocumentMetadata {
+  document_id?: string;
+  file_name?: string;
+  file_type?: string;
+  file_size?: number;
+  upload_date?: string;
+  total_chunks?: number;
+  file_url?: string;
+  file_path?: string;
+}
+
+interface DocumentRow {
+  content?: string;
+  metadata?: DocumentMetadata | null;
+}
 
 export async function GET(req: Request) {
   try {
+    const supabase = getSupabaseAdminClient();
     const reqUrl = new URL(req.url);
     const id = reqUrl.searchParams.get("id");
     const file = reqUrl.searchParams.get("file") === "true";
@@ -31,9 +43,7 @@ export async function GET(req: Request) {
       const fileType = meta?.file_type || "application/octet-stream";
       const filePath = meta?.file_path || `${id}.${fileName.split(".").pop() || "pdf"}`;
 
-      const { data: fileData, error: downloadError } = await supabaseStorage.storage
-        .from("documents")
-        .download(filePath);
+      const { data: fileData, error: downloadError } = await supabase.storage.from("documents").download(filePath);
 
       if (downloadError || !fileData) {
         return NextResponse.json(
@@ -81,7 +91,7 @@ export async function GET(req: Request) {
         file_size: m.file_size || 0,
         upload_date: m.upload_date || new Date().toISOString(),
         total_chunks: chunks.length,
-        fullText: chunks.map((c: any) => c.content).join("\n\n"),
+        fullText: (chunks as DocumentRow[]).map((c) => c.content || "").join("\n\n"),
         file_url: m.file_url,
         file_path: m.file_path,
       });
@@ -96,8 +106,8 @@ export async function GET(req: Request) {
 
     // Deduplicate documents by document_id
     // Since each document is split into multiple chunks, we need to group them
-    const map = new Map();
-    documents?.forEach((doc: any) => {
+    const map = new Map<string, DocumentMetadata & { id: string }>();
+    (documents as DocumentRow[] | null)?.forEach((doc) => {
       const m = doc.metadata;
       if (m?.document_id && !map.has(m.document_id)) {
         map.set(m.document_id, {
@@ -114,13 +124,14 @@ export async function GET(req: Request) {
     });
 
     return NextResponse.json({ documents: Array.from(map.values()) });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ error: getErrorMessage(error, "Failed to fetch documents") }, { status: 500 });
   }
 }
 
 export async function DELETE(req: Request) {
   try {
+    const supabase = getSupabaseAdminClient();
     const id = new URL(req.url).searchParams.get("id");
     if (!id) {
       return NextResponse.json({ error: "Document ID required" }, { status: 400 });
@@ -137,7 +148,7 @@ export async function DELETE(req: Request) {
 
     // Delete file from storage
     if (filePath) {
-      await supabaseStorage.storage.from("documents").remove([filePath]);
+      await supabase.storage.from("documents").remove([filePath]);
     }
 
     // Delete all chunks from database
@@ -148,7 +159,7 @@ export async function DELETE(req: Request) {
     }
 
     return NextResponse.json({ success: true, fileDeleted: !!filePath });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ error: getErrorMessage(error, "Failed to delete document") }, { status: 500 });
   }
 }

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Navigation from "../components/Navigation";
 import PDFViewerModal from "../components/PDFViewerModal";
 import UploadModal from "../components/UploadModal";
@@ -26,11 +26,7 @@ export default function DocumentsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
 
-  useEffect(() => {
-    fetchDocuments();
-  }, []);
-
-  const fetchDocuments = async () => {
+  const fetchDocuments = useCallback(async () => {
     try {
       setLoading(true);
       const res = await fetch("/api/documents");
@@ -45,7 +41,11 @@ export default function DocumentsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void Promise.resolve().then(fetchDocuments);
+  }, [fetchDocuments]);
 
   const formatDate = (s: string) => {
     try {
@@ -229,6 +229,7 @@ export default function DocumentsPage() {
 
         {selectedPDF && (
           <PDFViewerModal
+            key={`${selectedPDF.id || selectedPDF.url}:${selectedPDF.isPDF === false ? "content" : "pdf"}`}
             isOpen={showPDFModal}
             onClose={() => {
               setShowPDFModal(false);

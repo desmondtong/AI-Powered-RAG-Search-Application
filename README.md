@@ -1,5 +1,35 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Environment
+
+Create `.env.local` with:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=your-supabase-publishable-key
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+GEMINI_API_KEY=your-google-ai-studio-key
+```
+
+`GOOGLE_API_KEY` also works if you prefer that variable name. The app uses `gemini-embedding-001` with `outputDimensionality: 1536`, so it can use the existing Supabase `embedding vector(1536)` schema.
+
+`SUPABASE_SERVICE_ROLE_KEY` is required by the server API routes for document inserts, deletes, storage access, and vector search. Keep it server-only; never prefix it with `NEXT_PUBLIC_`.
+
+For more reliable PDF parsing, install Poppler and expose its `pdftotext` binary. If it is not on `PATH`, set:
+
+```bash
+PDFTOTEXT_PATH=/absolute/path/to/pdftotext
+```
+
+The app falls back to `pdf2json` when `pdftotext` is unavailable, but some PDFs with custom embedded fonts parse much more cleanly through Poppler.
+
+Optional model overrides:
+
+```bash
+GEMINI_EMBEDDING_MODEL=gemini-embedding-001
+GEMINI_GENERATION_MODEL=gemini-flash-lite-latest
+```
+
 ## Getting Started
 
 First, run the development server:

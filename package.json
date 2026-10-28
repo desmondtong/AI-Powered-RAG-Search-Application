@@ -4,18 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
-    "@langchain/openai": "^1.7.0",
-    "@langchain/textsplitters": "^1.0.2",
+    "@google/genai": "^2.31.0",
     "@supabase/supabase-js": "^2.118.0",
-    "langchain": "^1.5.19",
     "mammoth": "^1.13.0",
     "next": "16.4.2",
-    "openai": "^7.43.0",
     "pdf2json": "^4.1.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"

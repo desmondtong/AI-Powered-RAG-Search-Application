@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:experience": "tsc -p tsconfig.experience-tests.json && node --test .experience-test-build/app/lib/experience/*.test.js"
   },
   "dependencies": {
     "@google/genai": "^2.31.0",
@@ -15,7 +16,8 @@
     "next": "16.4.2",
     "pdf2json": "^4.1.0",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",

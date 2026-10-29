@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 import assert from "node:assert/strict";
 import Module from "node:module";
 import { describe, it } from "node:test";
@@ -17,6 +18,7 @@ interface MockServiceExports {
   createDraftFromApprovedRevision?: (sourceId: string, body: unknown) => Promise<unknown>;
   getExperienceRevisionExport?: (sourceId: string, revisionId: string) => Promise<unknown>;
   getExperienceSourceFile?: (sourceId: string) => Promise<unknown>;
+  deleteExperienceSource?: (sourceId: string) => Promise<unknown>;
 }
 
 interface MockStoredSourceRow {
@@ -63,6 +65,7 @@ async function withMockedExperienceService<T>(routePath: string, serviceExports:
       file_size: 4,
       bytes: Buffer.from("docx"),
     }),
+    deleteExperienceSource: async (sourceId: string) => ({ source_id: sourceId, status: "deleted" }),
     ...serviceExports,
   });
 
@@ -88,6 +91,13 @@ function sameOriginRequest(url: string, init: RequestInit = {}) {
       ...(init.headers || {}),
     },
   });
+}
+
+type SourceRouteContext = { params: Promise<{ id: string }> };
+type RevisionRouteContext = { params: Promise<{ id: string; revisionId: string }> };
+
+function routeContext<T extends Record<string, string>>(params: T) {
+  return { params: Promise.resolve(params) };
 }
 
 function pdfFile() {
@@ -234,9 +244,9 @@ describe("experience API endpoints", () => {
         revisions: [{ id: "revision-1" }],
       }),
     }, async (route) => {
-      const response = await (route.GET as (req: Request, context: { params: { id: string } }) => Promise<Response>)(
+      const response = await (route.GET as (req: Request, context: SourceRouteContext) => Promise<Response>)(
         new Request("http://localhost/api/experiences/source-1"),
-        { params: { id: "source-1" } },
+        routeContext({ id: "source-1" }),
       );
       const body = await response.json();
       assert.equal(body.source.id, "source-1");
@@ -251,9 +261,9 @@ describe("experience API endpoints", () => {
         throw new ExperienceApiError("source-not-found", "Experience source was not found.", 404);
       },
     }, async (route) => {
-      const response = await (route.GET as (req: Request, context: { params: { id: string } }) => Promise<Response>)(
+      const response = await (route.GET as (req: Request, context: SourceRouteContext) => Promise<Response>)(
         new Request("http://localhost/api/experiences/missing"),
-        { params: { id: "missing" } },
+        routeContext({ id: "missing" }),
       );
       const body = await response.json();
       assert.equal(response.status, 404);
@@ -269,9 +279,9 @@ describe("experience API endpoints", () => {
         next_action: "parse",
       }),
     }, async (route) => {
-      const response = await (route.POST as (req: Request, context: { params: { id: string } }) => Promise<Response>)(
+      const response = await (route.POST as (req: Request, context: SourceRouteContext) => Promise<Response>)(
         sameOriginRequest("http://localhost/api/experiences/source-1/extract", { method: "POST" }),
-        { params: { id: "source-1" } },
+        routeContext({ id: "source-1" }),
       );
       const body = await response.json();
       assert.equal(body.status, "extracted");
@@ -285,18 +295,18 @@ describe("experience API endpoints", () => {
         next_action: "review",
       }),
     }, async (route) => {
-      const crossOriginResponse = await (route.POST as (req: Request, context: { params: { id: string } }) => Promise<Response>)(
+      const crossOriginResponse = await (route.POST as (req: Request, context: SourceRouteContext) => Promise<Response>)(
         new Request("http://localhost/api/experiences/source-1/parse", {
           method: "POST",
           headers: { origin: "https://example.invalid" },
         }),
-        { params: { id: "source-1" } },
+        routeContext({ id: "source-1" }),
       );
       assert.equal(crossOriginResponse.status, 403);
 
-      const response = await (route.POST as (req: Request, context: { params: { id: string } }) => Promise<Response>)(
+      const response = await (route.POST as (req: Request, context: SourceRouteContext) => Promise<Response>)(
         sameOriginRequest("http://localhost/api/experiences/source-1/parse", { method: "POST" }),
-        { params: { id: "source-1" } },
+        routeContext({ id: "source-1" }),
       );
       const body = await response.json();
       assert.equal(body.status, "draft");
@@ -313,7 +323,7 @@ describe("experience API endpoints", () => {
         next_action: "review",
       }),
     }, async (route) => {
-      const response = await (route.PATCH as (req: Request, context: { params: { id: string } }) => Promise<Response>)(
+      const response = await (route.PATCH as (req: Request, context: SourceRouteContext) => Promise<Response>)(
         sameOriginRequest("http://localhost/api/experiences/source-1/draft", {
           method: "PATCH",
           body: JSON.stringify({
@@ -322,7 +332,7 @@ describe("experience API endpoints", () => {
             draft: {},
           }),
         }),
-        { params: { id: "source-1" } },
+        routeContext({ id: "source-1" }),
       );
       const body = await response.json();
       assert.equal(response.status, 200);
@@ -338,7 +348,7 @@ describe("experience API endpoints", () => {
         next_action: "index",
       }),
     }, async (route) => {
-      const crossOriginResponse = await (route.POST as (req: Request, context: { params: { id: string } }) => Promise<Response>)(
+      const crossOriginResponse = await (route.POST as (req: Request, context: SourceRouteContext) => Promise<Response>)(
         new Request("http://localhost/api/experiences/source-1/approve", {
           method: "POST",
           headers: { origin: "https://example.invalid" },
@@ -347,11 +357,11 @@ describe("experience API endpoints", () => {
             expected_draft_version: 2,
           }),
         }),
-        { params: { id: "source-1" } },
+        routeContext({ id: "source-1" }),
       );
       assert.equal(crossOriginResponse.status, 403);
 
-      const response = await (route.POST as (req: Request, context: { params: { id: string } }) => Promise<Response>)(
+      const response = await (route.POST as (req: Request, context: SourceRouteContext) => Promise<Response>)(
         sameOriginRequest("http://localhost/api/experiences/source-1/approve", {
           method: "POST",
           body: JSON.stringify({
@@ -359,7 +369,7 @@ describe("experience API endpoints", () => {
             expected_draft_version: 2,
           }),
         }),
-        { params: { id: "source-1" } },
+        routeContext({ id: "source-1" }),
       );
       const body = await response.json();
       assert.equal(response.status, 200);
@@ -384,22 +394,22 @@ describe("experience API endpoints", () => {
         next_action: "index",
       }),
     }, async (route) => {
-      const crossOriginResponse = await (route.POST as (req: Request, context: { params: { id: string } }) => Promise<Response>)(
+      const crossOriginResponse = await (route.POST as (req: Request, context: SourceRouteContext) => Promise<Response>)(
         new Request("http://localhost/api/experiences/source-1/index", {
           method: "POST",
           headers: { origin: "https://example.invalid" },
           body: JSON.stringify({ revision_id: "revision-1" }),
         }),
-        { params: { id: "source-1" } },
+        routeContext({ id: "source-1" }),
       );
       assert.equal(crossOriginResponse.status, 403);
 
-      const response = await (route.POST as (req: Request, context: { params: { id: string } }) => Promise<Response>)(
+      const response = await (route.POST as (req: Request, context: SourceRouteContext) => Promise<Response>)(
         sameOriginRequest("http://localhost/api/experiences/source-1/index", {
           method: "POST",
           body: JSON.stringify({ revision_id: "revision-1" }),
         }),
-        { params: { id: "source-1" } },
+        routeContext({ id: "source-1" }),
       );
       const body = await response.json();
       assert.equal(response.status, 200);
@@ -419,22 +429,22 @@ describe("experience API endpoints", () => {
         next_action: "review",
       }),
     }, async (route) => {
-      const crossOriginResponse = await (route.POST as (req: Request, context: { params: { id: string } }) => Promise<Response>)(
+      const crossOriginResponse = await (route.POST as (req: Request, context: SourceRouteContext) => Promise<Response>)(
         new Request("http://localhost/api/experiences/source-1/draft-from-approved", {
           method: "POST",
           headers: { origin: "https://example.invalid" },
           body: JSON.stringify({ approved_revision_id: "approved-1" }),
         }),
-        { params: { id: "source-1" } },
+        routeContext({ id: "source-1" }),
       );
       assert.equal(crossOriginResponse.status, 403);
 
-      const response = await (route.POST as (req: Request, context: { params: { id: string } }) => Promise<Response>)(
+      const response = await (route.POST as (req: Request, context: SourceRouteContext) => Promise<Response>)(
         sameOriginRequest("http://localhost/api/experiences/source-1/draft-from-approved", {
           method: "POST",
           body: JSON.stringify({ approved_revision_id: "approved-1" }),
         }),
-        { params: { id: "source-1" } },
+        routeContext({ id: "source-1" }),
       );
       const body = await response.json();
       assert.equal(response.status, 200);
@@ -452,10 +462,10 @@ describe("experience API endpoints", () => {
     }, async (route) => {
       const response = await (route.GET as (
         req: Request,
-        context: { params: { id: string; revisionId: string } },
+        context: RevisionRouteContext,
       ) => Promise<Response>)(
         new Request("http://localhost/api/experiences/source-1/revisions/approved-1/export"),
-        { params: { id: "source-1", revisionId: "approved-1" } },
+        routeContext({ id: "source-1", revisionId: "approved-1" }),
       );
       const body = await response.json();
       assert.equal(response.status, 200);
@@ -477,30 +487,68 @@ describe("experience API endpoints", () => {
         };
       },
     }, async (route) => {
-      const crossOriginResponse = await (route.GET as (req: Request, context: { params: { id: string } }) => Promise<Response>)(
+      const crossOriginResponse = await (route.GET as (req: Request, context: SourceRouteContext) => Promise<Response>)(
         new Request("http://localhost/api/experiences/source-1/file", {
           headers: { origin: "https://example.invalid" },
         }),
-        { params: { id: "source-1" } },
+        routeContext({ id: "source-1" }),
       );
       const crossOriginBody = await crossOriginResponse.json();
       assert.equal(crossOriginResponse.status, 403);
       assert.equal(crossOriginBody.error.code, "cross-origin-rejected");
       assert.equal(serviceCalls, 0);
 
-      const response = await (route.GET as (req: Request, context: { params: { id: string } }) => Promise<Response>)(
+      const response = await (route.GET as (req: Request, context: SourceRouteContext) => Promise<Response>)(
         new Request("http://localhost/api/experiences/source-1/file", {
           headers: {
             origin: "http://localhost",
             "sec-fetch-site": "same-origin",
           },
         }),
-        { params: { id: "source-1" } },
+        routeContext({ id: "source-1" }),
       );
       assert.equal(response.status, 200);
       assert.equal(await response.text(), "docx");
       assert.equal(response.headers.get("cache-control"), "private, no-store");
       assert.match(response.headers.get("content-disposition") ?? "", /attachment; filename="experience\.docx"/);
+      assert.equal(serviceCalls, 1);
+    });
+  });
+
+  it("deletes experience sources through same-origin mutations", async () => {
+    let serviceCalls = 0;
+    await withMockedExperienceService("../../api/experiences/[id]/route", {
+      deleteExperienceSource: async (sourceId: string) => {
+        serviceCalls += 1;
+        return {
+          source_id: sourceId,
+          status: "deleted",
+          cleanup_pending: false,
+          next_action: null,
+        };
+      },
+    }, async (route) => {
+      const crossOriginResponse = await (route.DELETE as (req: Request, context: SourceRouteContext) => Promise<Response>)(
+        new Request("http://localhost/api/experiences/source-1", {
+          method: "DELETE",
+          headers: { origin: "https://example.invalid" },
+        }),
+        routeContext({ id: "source-1" }),
+      );
+      const crossOriginBody = await crossOriginResponse.json();
+      assert.equal(crossOriginResponse.status, 403);
+      assert.equal(crossOriginBody.error.code, "cross-origin-rejected");
+      assert.equal(serviceCalls, 0);
+
+      const response = await (route.DELETE as (req: Request, context: SourceRouteContext) => Promise<Response>)(
+        sameOriginRequest("http://localhost/api/experiences/source-1", { method: "DELETE" }),
+        routeContext({ id: "source-1" }),
+      );
+      const body = await response.json();
+      assert.equal(response.status, 200);
+      assert.equal(body.source_id, "source-1");
+      assert.equal(body.status, "deleted");
+      assert.equal(body.cleanup_pending, false);
       assert.equal(serviceCalls, 1);
     });
   });

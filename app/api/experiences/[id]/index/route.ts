@@ -6,7 +6,7 @@ import {
 } from "../../../../lib/experience/apiRoutes";
 import { indexExperienceRevision } from "../../../../lib/experience/apiService";
 
-export async function POST(req: Request, context: { params: { id?: string } | Promise<{ id?: string }> }) {
+export async function POST(req: Request, context: { params: Promise<{ id?: string }> }) {
   try {
     assertSameOriginMutation(req);
     const sourceId = await getRouteSourceId(context);

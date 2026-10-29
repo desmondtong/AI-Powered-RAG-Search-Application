@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 import assert from "node:assert/strict";
 import Module from "node:module";
 import { describe, it } from "node:test";

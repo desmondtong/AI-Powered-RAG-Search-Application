@@ -19,6 +19,19 @@ DECLARE
   previous_publish_child uuid := gen_random_uuid();
   publish_revision uuid := gen_random_uuid();
   parent_a uuid := gen_random_uuid();
+  standalone_search_parent uuid := gen_random_uuid();
+  draft_search_source uuid := gen_random_uuid();
+  draft_search_extraction uuid := gen_random_uuid();
+  draft_search_revision uuid := gen_random_uuid();
+  draft_search_parent uuid := gen_random_uuid();
+  failed_search_source uuid := gen_random_uuid();
+  failed_search_extraction uuid := gen_random_uuid();
+  failed_search_revision uuid := gen_random_uuid();
+  failed_search_parent uuid := gen_random_uuid();
+  deleted_search_source uuid := gen_random_uuid();
+  deleted_search_extraction uuid := gen_random_uuid();
+  deleted_search_revision uuid := gen_random_uuid();
+  deleted_search_parent uuid := gen_random_uuid();
   reservation_hash text := repeat('a', 64);
   reserved_source public.experience_sources%ROWTYPE;
   retried_source public.experience_sources%ROWTYPE;
@@ -109,6 +122,7 @@ BEGIN
      OR has_function_privilege('anon', 'public.acquire_experience_source_execution(uuid,text,integer)', 'EXECUTE')
      OR has_function_privilege('authenticated', 'public.update_experience_revision_draft(uuid,integer,jsonb)', 'EXECUTE')
      OR has_function_privilege('anon', 'public.publish_experience_revision(uuid,uuid,text,text,integer,integer,text,text,text,integer)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.delete_experience_source(uuid)', 'EXECUTE')
      OR has_function_privilege('authenticated', 'public.match_approved_experience_chunks(vector,double precision,integer,uuid[])', 'EXECUTE') THEN
     RAISE EXCEPTION 'Experience source registry RPCs are exposed to browser roles';
   END IF;
@@ -119,6 +133,7 @@ BEGIN
      OR NOT has_function_privilege('service_role', 'public.complete_experience_source_execution(uuid,uuid,text,text,uuid,uuid,jsonb)', 'EXECUTE')
      OR NOT has_function_privilege('service_role', 'public.update_experience_revision_draft(uuid,integer,jsonb)', 'EXECUTE')
      OR NOT has_function_privilege('service_role', 'public.publish_experience_revision(uuid,uuid,text,text,integer,integer,text,text,text,integer)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.delete_experience_source(uuid)', 'EXECUTE')
      OR NOT has_function_privilege('service_role', 'public.match_approved_experience_chunks(vector,double precision,integer,uuid[])', 'EXECUTE') THEN
     RAISE EXCEPTION 'Service role is missing experience source registry RPC privileges';
   END IF;
@@ -395,7 +410,10 @@ BEGIN
     id, source_id, text_sha256, parser_version, normalization_version, blocks
   ) VALUES (
     publish_extraction, publish_source, 'publish-text-hash', 'parser-v1', 'normalize-v1',
-    '[{"block_id":"b1","order":0,"text":"Exact citation","text_start":0,"text_end":14}]'::jsonb
+    '[
+      {"block_id":"b1","order":0,"text":"Exact citation","text_start":0,"text_end":14},
+      {"block_id":"b2","order":1,"text":"Second citation","text_start":15,"text_end":30}
+    ]'::jsonb
   );
 
   INSERT INTO public.experience_revisions (
@@ -457,7 +475,7 @@ BEGIN
       'source_document_id', publish_source::text,
       'source_file_name', 'publish.docx',
       'source_file_type', 'docx',
-      'parent_text', 'Project parent',
+      'parent_text', 'Project parent 1',
       'metadata', jsonb_build_object(
         'logical_experience_id', 'publish-experience-0001',
         'logical_parent_id', 'publish-parent-0001'
@@ -472,6 +490,28 @@ BEGIN
       'chunk_index', 0
     ),
     query_vector, now()
+  ), (
+    publish_revision, 'publish-parent-0002:chunk-0001', 'publish-plan', 'publish-hash',
+    'publish-chunking-v1', 'gemini-embedding-001',
+    jsonb_build_object(
+      'source_document_id', publish_source::text,
+      'source_file_name', 'publish.docx',
+      'source_file_type', 'docx',
+      'parent_text', 'Project parent 2',
+      'metadata', jsonb_build_object(
+        'logical_experience_id', 'publish-experience-0002',
+        'logical_parent_id', 'publish-parent-0002'
+      )
+    ),
+    jsonb_build_object(
+      'child_text', 'Second citation',
+      'embedding_text', 'Project parent 2 Second citation',
+      'metadata', jsonb_build_object(
+        'logical_chunk_id', 'publish-parent-0002:chunk-0001'
+      ),
+      'chunk_index', 0
+    ),
+    query_vector, now()
   );
 
   rejected := false;
@@ -480,9 +520,82 @@ BEGIN
       publish_source,
       publish_revision,
       'publish-plan',
+      'wrong-publish-hash',
+      2,
+      2,
+      'publish-chunking-v1',
+      'gemini-embedding-001',
+      'RETRIEVAL_DOCUMENT',
+      1536
+    );
+  EXCEPTION WHEN serialization_failure OR raise_exception THEN
+    rejected := true;
+  END;
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'Publication accepted an altered approved content hash';
+  END IF;
+
+  rejected := false;
+  BEGIN
+    PERFORM public.publish_experience_revision(
+      publish_source,
+      publish_revision,
+      'publish-plan',
       'publish-hash',
-      1,
-      1,
+      2,
+      2,
+      'publish-chunking-v1',
+      'different-embedding-model',
+      'RETRIEVAL_DOCUMENT',
+      1536
+    );
+  EXCEPTION WHEN serialization_failure OR raise_exception THEN
+    rejected := true;
+  END;
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'Publication accepted mixed embedding configuration';
+  END IF;
+
+  UPDATE public.experience_sources
+  SET deleted_at = now(),
+      status = 'deleted'
+  WHERE id = publish_source;
+
+  rejected := false;
+  BEGIN
+    PERFORM public.publish_experience_revision(
+      publish_source,
+      publish_revision,
+      'publish-plan',
+      'publish-hash',
+      2,
+      2,
+      'publish-chunking-v1',
+      'gemini-embedding-001',
+      'RETRIEVAL_DOCUMENT',
+      1536
+    );
+  EXCEPTION WHEN serialization_failure THEN
+    rejected := true;
+  END;
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'Publication accepted a deleted source';
+  END IF;
+
+  UPDATE public.experience_sources
+  SET deleted_at = NULL,
+      status = 'indexed'
+  WHERE id = publish_source;
+
+  rejected := false;
+  BEGIN
+    PERFORM public.publish_experience_revision(
+      publish_source,
+      publish_revision,
+      'publish-plan',
+      'publish-hash',
+      2,
+      2,
       'publish-chunking-v1',
       'gemini-embedding-001',
       'RETRIEVAL_DOCUMENT',
@@ -498,7 +611,7 @@ BEGIN
     SELECT 1
     FROM public.parent_documents
     WHERE source_document_id = publish_source::text
-      AND parent_text = 'Project parent'
+      AND parent_text IN ('Project parent 1', 'Project parent 2')
   ) OR EXISTS (
     SELECT 1 FROM public.experience_revision_parents WHERE revision_id = publish_revision
   ) THEN
@@ -515,14 +628,26 @@ BEGIN
   END IF;
 
   UPDATE public.experience_index_staging
-  SET child_payload = jsonb_build_object(
-        'child_text', 'Exact citation',
-        'embedding_text', 'Project parent Exact citation',
-        'metadata', jsonb_build_object(
-          'logical_chunk_id', 'publish-parent-0001:chunk-0001'
-        ),
-        'chunk_index', 0
-      )
+  SET child_payload = CASE logical_chunk_key
+      WHEN 'publish-parent-0001:chunk-0001' THEN
+        jsonb_build_object(
+          'child_text', 'Exact citation',
+          'embedding_text', 'Project parent 1 Exact citation',
+          'metadata', jsonb_build_object(
+            'logical_chunk_id', 'publish-parent-0001:chunk-0001'
+          ),
+          'chunk_index', 0
+        )
+      ELSE
+        jsonb_build_object(
+          'child_text', 'Second citation',
+          'embedding_text', 'Project parent 2 Second citation',
+          'metadata', jsonb_build_object(
+            'logical_chunk_id', 'publish-parent-0002:chunk-0001'
+          ),
+          'chunk_index', 0
+        )
+      END
   WHERE revision_id = publish_revision;
 
   SELECT public.publish_experience_revision(
@@ -530,8 +655,8 @@ BEGIN
     publish_revision,
     'publish-plan',
     'publish-hash',
-    1,
-    1,
+    2,
+    2,
     'publish-chunking-v1',
     'gemini-embedding-001',
     'RETRIEVAL_DOCUMENT',
@@ -539,21 +664,27 @@ BEGIN
   ) INTO publish_result;
 
   IF publish_result->>'status' <> 'indexed'
-     OR (publish_result->>'parent_count')::integer <> 1
-     OR (publish_result->>'child_count')::integer <> 1 THEN
+     OR (publish_result->>'parent_count')::integer <> 2
+     OR (publish_result->>'child_count')::integer <> 2 THEN
     RAISE EXCEPTION 'Publication RPC returned unexpected counts';
   END IF;
-  IF NOT EXISTS (
-    SELECT 1
+  SELECT count(*) INTO approved_search_count
+  FROM (
+    SELECT c.child_text, p.parent_text
     FROM public.experience_sources s
     JOIN public.experience_revisions r ON r.id = s.active_revision_id
     JOIN public.experience_revision_parents rp ON rp.revision_id = r.id
     JOIN public.document_chunks c ON c.parent_id = rp.parent_id
+    JOIN public.parent_documents p ON p.id = rp.parent_id
     WHERE s.id = publish_source
       AND r.id = publish_revision
-      AND c.child_text = 'Exact citation'
-  ) THEN
-    RAISE EXCEPTION 'Publication RPC did not create active mapped evidence';
+      AND (c.child_text, p.parent_text) IN (
+        ('Exact citation', 'Project parent 1'),
+        ('Second citation', 'Project parent 2')
+      )
+  ) published_pairs;
+  IF approved_search_count <> 2 THEN
+    RAISE EXCEPTION 'Publication RPC did not create active mapped multi-parent evidence';
   END IF;
   IF EXISTS (
     SELECT 1
@@ -572,6 +703,149 @@ BEGIN
     RAISE EXCEPTION 'Publication RPC did not clear compatible staging rows';
   END IF;
 
+  SELECT public.publish_experience_revision(
+    publish_source,
+    publish_revision,
+    'publish-plan',
+    'publish-hash',
+    2,
+    2,
+    'publish-chunking-v1',
+    'gemini-embedding-001',
+    'RETRIEVAL_DOCUMENT',
+    1536
+  ) INTO publish_result;
+
+  IF publish_result->>'already_published' <> 'true'
+     OR (publish_result->>'parent_count')::integer <> 2
+     OR (publish_result->>'child_count')::integer <> 2 THEN
+    RAISE EXCEPTION 'Idempotent publication retry returned an unexpected response';
+  END IF;
+  SELECT count(*) INTO approved_search_count
+  FROM public.parent_documents
+  WHERE source_document_id = publish_source::text
+    AND parent_text IN ('Project parent 1', 'Project parent 2');
+  IF approved_search_count <> 2 THEN
+    RAISE EXCEPTION 'Idempotent publication retry duplicated active parent rows';
+  END IF;
+
+  rejected := false;
+  BEGIN
+    PERFORM public.publish_experience_revision(
+      publish_source,
+      publish_revision,
+      'stale-plan',
+      'publish-hash',
+      2,
+      2,
+      'publish-chunking-v1',
+      'gemini-embedding-001',
+      'RETRIEVAL_DOCUMENT',
+      1536
+    );
+  EXCEPTION WHEN serialization_failure THEN
+    rejected := true;
+  END;
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'Idempotent publication retry accepted stale plan configuration';
+  END IF;
+
+  rejected := false;
+  BEGIN
+    PERFORM public.publish_experience_revision(
+      publish_source,
+      previous_publish_revision,
+      'previous-publish-plan',
+      'previous-publish-hash',
+      1,
+      1,
+      'publish-chunking-v1',
+      'gemini-embedding-001',
+      'RETRIEVAL_DOCUMENT',
+      1536
+    );
+  EXCEPTION WHEN serialization_failure THEN
+    rejected := true;
+  END;
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'Older publication retry reactivated a superseded revision';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.experience_sources
+    WHERE id = publish_source
+      AND latest_approved_revision_id = publish_revision
+      AND active_revision_id = publish_revision
+  ) THEN
+    RAISE EXCEPTION 'Stale publication retry changed the active revision';
+  END IF;
+
+  INSERT INTO public.parent_documents (
+    id, source_document_id, source_file_name, source_file_type, parent_text, metadata
+  ) VALUES (
+    standalone_search_parent, 'standalone-source', 'standalone.docx', 'docx',
+    'Standalone parent',
+    '{"logical_parent_id":"standalone-parent"}'::jsonb
+  );
+  INSERT INTO public.document_chunks (
+    parent_id, child_text, embedding_text, embedding, metadata, chunk_index
+  ) VALUES (
+    standalone_search_parent, 'Standalone citation', 'Standalone citation',
+    query_vector, '{"logical_chunk_id":"standalone-chunk"}'::jsonb, 0
+  );
+
+  INSERT INTO public.experience_sources (
+    id, original_byte_sha256, original_file_name, original_file_type,
+    original_file_size, storage_path, status
+  ) VALUES
+    (draft_search_source, 'draft-search-byte-hash', 'draft-search.docx', 'docx', 128, 'sources/draft-search/doc.docx', 'draft'),
+    (failed_search_source, 'failed-search-byte-hash', 'failed-search.docx', 'docx', 128, 'sources/failed-search/doc.docx', 'failed'),
+    (deleted_search_source, 'deleted-search-byte-hash', 'deleted-search.docx', 'docx', 128, 'sources/deleted-search/doc.docx', 'indexed');
+
+  INSERT INTO public.experience_extractions (
+    id, source_id, text_sha256, parser_version, normalization_version, blocks
+  ) VALUES
+    (draft_search_extraction, draft_search_source, 'draft-search-text-hash', 'parser-v1', 'normalize-v1', '[{"block_id":"b1","order":0,"text":"Draft citation","text_start":0,"text_end":14}]'::jsonb),
+    (failed_search_extraction, failed_search_source, 'failed-search-text-hash', 'parser-v1', 'normalize-v1', '[{"block_id":"b1","order":0,"text":"Failed citation","text_start":0,"text_end":15}]'::jsonb),
+    (deleted_search_extraction, deleted_search_source, 'deleted-search-text-hash', 'parser-v1', 'normalize-v1', '[{"block_id":"b1","order":0,"text":"Deleted citation","text_start":0,"text_end":16}]'::jsonb);
+
+  INSERT INTO public.experience_revisions (
+    id, source_id, extraction_id, status, draft_json, draft_version,
+    approved_json, approved_content_hash, approved_at
+  ) VALUES
+    (draft_search_revision, draft_search_source, draft_search_extraction, 'draft', '{"schema_version":"1","experiences":[]}'::jsonb, 1, NULL, NULL, NULL),
+    (failed_search_revision, failed_search_source, failed_search_extraction, 'failed', '{"schema_version":"1","experiences":[]}'::jsonb, 1, '{"schema_version":"1","experiences":[]}'::jsonb, 'failed-search-hash', now()),
+    (deleted_search_revision, deleted_search_source, deleted_search_extraction, 'indexed', '{"schema_version":"1","experiences":[]}'::jsonb, 1, '{"schema_version":"1","experiences":[]}'::jsonb, 'deleted-search-hash', now());
+
+  INSERT INTO public.parent_documents (
+    id, source_document_id, source_file_name, source_file_type, parent_text, metadata
+  ) VALUES
+    (draft_search_parent, draft_search_source::text, 'draft-search.docx', 'docx', 'Draft parent', '{"logical_parent_id":"draft-parent"}'::jsonb),
+    (failed_search_parent, failed_search_source::text, 'failed-search.docx', 'docx', 'Failed parent', '{"logical_parent_id":"failed-parent"}'::jsonb),
+    (deleted_search_parent, deleted_search_source::text, 'deleted-search.docx', 'docx', 'Deleted parent', '{"logical_parent_id":"deleted-parent"}'::jsonb);
+
+  INSERT INTO public.document_chunks (
+    parent_id, child_text, embedding_text, embedding, metadata, chunk_index
+  ) VALUES
+    (draft_search_parent, 'Draft citation', 'Draft citation', query_vector, '{"logical_chunk_id":"draft-chunk"}'::jsonb, 0),
+    (failed_search_parent, 'Failed citation', 'Failed citation', query_vector, '{"logical_chunk_id":"failed-chunk"}'::jsonb, 0),
+    (deleted_search_parent, 'Deleted citation', 'Deleted citation', query_vector, '{"logical_chunk_id":"deleted-chunk"}'::jsonb, 0);
+
+  INSERT INTO public.experience_revision_parents (
+    revision_id, parent_id, logical_experience_id, logical_parent_id, plan_hash
+  ) VALUES
+    (draft_search_revision, draft_search_parent, 'draft-experience', 'draft-parent', 'draft-plan'),
+    (failed_search_revision, failed_search_parent, 'failed-experience', 'failed-parent', 'failed-plan'),
+    (deleted_search_revision, deleted_search_parent, 'deleted-experience', 'deleted-parent', 'deleted-plan');
+
+  UPDATE public.experience_sources
+  SET latest_extraction_id = deleted_search_extraction,
+      latest_approved_revision_id = deleted_search_revision,
+      active_revision_id = deleted_search_revision,
+      deleted_at = now(),
+      status = 'deleted'
+  WHERE id = deleted_search_source;
+
   SELECT * INTO approved_search_result
   FROM public.match_approved_experience_chunks(query_vector, 0.99, 10, NULL)
   WHERE source_id = publish_source;
@@ -581,17 +855,37 @@ BEGIN
   END IF;
 
   IF approved_search_result.revision_id IS DISTINCT FROM publish_revision
-     OR approved_search_result.child_text IS DISTINCT FROM 'Exact citation'
-     OR approved_search_result.logical_experience_id IS DISTINCT FROM 'publish-experience-0001'
-     OR approved_search_result.logical_parent_id IS DISTINCT FROM 'publish-parent-0001'
-     OR approved_search_result.logical_chunk_id IS DISTINCT FROM 'publish-parent-0001:chunk-0001'
-     OR approved_search_result.parent_text IS DISTINCT FROM 'Project parent' THEN
+     OR approved_search_result.child_text NOT IN ('Exact citation', 'Second citation')
+     OR approved_search_result.logical_experience_id NOT IN ('publish-experience-0001', 'publish-experience-0002')
+     OR approved_search_result.logical_parent_id NOT IN ('publish-parent-0001', 'publish-parent-0002')
+     OR approved_search_result.logical_chunk_id NOT IN ('publish-parent-0001:chunk-0001', 'publish-parent-0002:chunk-0001')
+     OR approved_search_result.parent_text NOT IN ('Project parent 1', 'Project parent 2') THEN
     RAISE EXCEPTION 'Approved experience search did not return active publication lineage';
   END IF;
 
   SELECT count(*) INTO approved_search_count
+  FROM public.match_approved_experience_chunks(query_vector, 0.99, 10, NULL)
+  WHERE source_id = publish_source;
+  IF approved_search_count <> 2 THEN
+    RAISE EXCEPTION 'Approved experience search did not return both multi-parent chunks';
+  END IF;
+
+  SELECT count(*) INTO approved_search_count
+  FROM public.match_approved_experience_chunks(query_vector, 0.99, 10, NULL)
+  WHERE child_text IN (
+    'Standalone citation',
+    'Draft citation',
+    'Failed citation',
+    'Deleted citation',
+    'Previous active citation'
+  );
+  IF approved_search_count <> 0 THEN
+    RAISE EXCEPTION 'Approved experience search returned ineligible evidence';
+  END IF;
+
+  SELECT count(*) INTO approved_search_count
   FROM public.match_approved_experience_chunks(query_vector, 0.99, 10, ARRAY[publish_source]::uuid[]);
-  IF approved_search_count <> 1 THEN
+  IF approved_search_count <> 2 THEN
     RAISE EXCEPTION 'Approved experience search selected-source filter failed';
   END IF;
 
@@ -609,6 +903,83 @@ BEGIN
   END;
   IF NOT rejected THEN
     RAISE EXCEPTION 'Approved experience search accepted an ineligible selected source';
+  END IF;
+
+  SELECT public.delete_experience_source(publish_source) INTO publish_result;
+  IF publish_result->>'status' <> 'deleted'
+     OR (publish_result->>'deleted_parent_count')::integer <> 2
+     OR (publish_result->>'deleted_child_count')::integer <> 2
+     OR (publish_result->>'deleted_revision_count')::integer <> 2
+     OR (publish_result->>'deleted_extraction_count')::integer <> 1 THEN
+    RAISE EXCEPTION 'Experience source deletion returned unexpected cleanup counts';
+  END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM public.parent_documents
+    WHERE source_document_id = publish_source::text
+  ) OR EXISTS (
+    SELECT 1
+    FROM public.experience_revisions
+    WHERE source_id = publish_source
+  ) OR EXISTS (
+    SELECT 1
+    FROM public.experience_extractions
+    WHERE source_id = publish_source
+  ) OR EXISTS (
+    SELECT 1
+    FROM public.experience_index_staging st
+    JOIN public.experience_revisions r ON r.id = st.revision_id
+    WHERE r.source_id = publish_source
+  ) THEN
+    RAISE EXCEPTION 'Experience source deletion left indexed evidence, revisions, extractions, or staging';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.experience_sources
+    WHERE id = publish_source
+      AND status = 'deleted'
+      AND deleted_at IS NOT NULL
+      AND active_revision_id IS NULL
+      AND latest_approved_revision_id IS NULL
+  ) THEN
+    RAISE EXCEPTION 'Experience source deletion did not tombstone and clear pointers';
+  END IF;
+
+  rejected := false;
+  BEGIN
+    PERFORM public.match_approved_experience_chunks(query_vector, 0.99, 10, ARRAY[publish_source]::uuid[]);
+  EXCEPTION WHEN serialization_failure THEN
+    rejected := true;
+  END;
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'Deleted experience source remained eligible for selected-source search';
+  END IF;
+
+  rejected := false;
+  BEGIN
+    PERFORM public.publish_experience_revision(
+      publish_source,
+      publish_revision,
+      'publish-plan',
+      'publish-hash',
+      2,
+      2,
+      'publish-chunking-v1',
+      'gemini-embedding-001',
+      'RETRIEVAL_DOCUMENT',
+      1536
+    );
+  EXCEPTION WHEN serialization_failure THEN
+    rejected := true;
+  END;
+  IF NOT rejected THEN
+    RAISE EXCEPTION 'Late publication resurrected a deleted source';
+  END IF;
+
+  SELECT public.delete_experience_source(publish_source) INTO publish_result;
+  IF publish_result->>'already_deleted' <> 'true'
+     OR publish_result->>'storage_path' IS DISTINCT FROM 'sources/publish-byte-hash/publish.docx' THEN
+    RAISE EXCEPTION 'Experience source deletion retry was not idempotent';
   END IF;
 
   INSERT INTO public.experience_sources (

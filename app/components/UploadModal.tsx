@@ -1,13 +1,22 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import {
+  getDocumentsUploadConfig,
+  getDocumentsUploadErrorMessage,
+  getDocumentsUploadSuccessMessage,
+  isDocumentsUploadSuccess,
+  type DocumentsUploadKind,
+} from "../lib/experience/uploadUi";
 
 interface UploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onUploadSuccess?: () => void;
+  kind?: DocumentsUploadKind;
 }
 
-export default function UploadModal({ isOpen, onClose, onUploadSuccess }: UploadModalProps) {
+export default function UploadModal({ isOpen, onClose, onUploadSuccess, kind = "generic" }: UploadModalProps) {
+  const config = getDocumentsUploadConfig(kind);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -49,17 +58,17 @@ export default function UploadModal({ isOpen, onClose, onUploadSuccess }: Upload
       const formData = new FormData();
       formData.append("file", file);
 
-      const res = await fetch("/api/upload", {
+      const res = await fetch(config.endpoint, {
         method: "POST",
         body: formData,
       });
 
       const data = await res.json();
 
-      if (data.success) {
+      if (isDocumentsUploadSuccess(kind, data)) {
         setMessage({
           type: "success",
-          text: `File "${data.fileName}" uploaded successfully! Processed ${data.chunks} chunks.`,
+          text: getDocumentsUploadSuccessMessage(kind, data, file.name),
         });
         setFile(null);
         if (fileInputRef.current) {
@@ -70,7 +79,7 @@ export default function UploadModal({ isOpen, onClose, onUploadSuccess }: Upload
           resetAndClose();
         }, 1500);
       } else {
-        setMessage({ type: "error", text: data.error || "Upload failed" });
+        setMessage({ type: "error", text: getDocumentsUploadErrorMessage(data) });
       }
     } catch (error) {
       setMessage({ type: "error", text: error instanceof Error ? error.message : "Upload failed" });
@@ -91,7 +100,7 @@ export default function UploadModal({ isOpen, onClose, onUploadSuccess }: Upload
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
-          <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">Upload Document</h2>
+          <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{config.title}</h2>
           <button
             onClick={resetAndClose}
             className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -109,13 +118,13 @@ export default function UploadModal({ isOpen, onClose, onUploadSuccess }: Upload
               htmlFor="upload-file-input"
               className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
             >
-              Select a file (PDF, DOCX, or TXT)
+              {config.inputLabel}
             </label>
             <input
               id="upload-file-input"
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.docx,.txt"
+              accept={config.accept}
               onChange={handleFileChange}
               className="block w-full text-sm text-gray-500
                 file:mr-4 file:py-2 file:px-4
@@ -147,7 +156,7 @@ export default function UploadModal({ isOpen, onClose, onUploadSuccess }: Upload
             disabled={!file || uploading}
             className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
           >
-            {uploading ? "Uploading and Processing..." : "Upload Document"}
+            {uploading ? config.uploadingLabel : config.buttonLabel}
           </button>
 
           {message && (
@@ -163,8 +172,8 @@ export default function UploadModal({ isOpen, onClose, onUploadSuccess }: Upload
           )}
 
           <div className="mt-8 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm">
-            <p className="font-medium text-blue-900 dark:text-blue-200 mb-2">Supported: PDF, DOCX, TXT</p>
-            <p className="text-blue-700 dark:text-blue-400">Files will be processed and embedded for RAG search.</p>
+            <p className="font-medium text-blue-900 dark:text-blue-200 mb-2">{config.supportedLabel}</p>
+            <p className="text-blue-700 dark:text-blue-400">{config.supportDetail}</p>
           </div>
         </div>
       </div>

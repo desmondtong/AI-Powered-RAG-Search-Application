@@ -7,7 +7,7 @@ import { getExperienceRevisionExport } from "../../../../../../lib/experience/ap
 
 export async function GET(
   _req: Request,
-  context: { params: { id?: string; revisionId?: string } | Promise<{ id?: string; revisionId?: string }> },
+  context: { params: Promise<{ id?: string; revisionId?: string }> },
 ) {
   try {
     const { sourceId, revisionId } = await getRouteSourceAndRevisionIds(context);

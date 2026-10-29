@@ -64,6 +64,16 @@ Revision statuses are `draft`, `approved`, `indexing`, `indexed`, and `failed`; 
 
 `StructuredExperienceExportSchema` bundles the canonical revision, retained source blocks, content hash, export timestamp, and parser/model/prompt/chunking/embedding configuration versions. Downstream JD-fit and evaluation consumers should resolve citations through logical IDs and retained source spans, not through physical vector row IDs.
 
+## Approved Search, Export, And Deletion Contracts
+
+Downstream JD-fit and evaluation code must use the ingestion-owned approved-search helper/RPC, not the generic `/api/search` route or unfiltered evidence helpers. Approved search admits only nondeleted sources whose `active_revision_id` points to an indexed revision with frozen approved JSON and publication mappings. Optional source selection is applied before ranking; an omitted selection searches all eligible experience sources, an explicit empty selection returns no matches, and unknown, deleted, draft-only, failed, or superseded selections return an eligibility error instead of widening the search.
+
+Search results carry parent expansion plus source, revision, logical experience, logical evidence, logical chunk, and retained source-span lineage. JD-fit can use that lineage to cite retrieved evidence, but it must not treat generated summaries, parent headers, or physical vector UUIDs as citation anchors.
+
+Retained revision export is the stable contract for JD-fit fixtures and later quality evaluations. `GET /api/experiences/[id]/revisions/[revisionId]/export` is available only for retained approved, indexing, or indexed revisions on nondeleted sources. It returns accepted JSON, retained source blocks, canonical content hash, resolved source passages, and configuration versions. Superseded accepted revisions remain exportable before source deletion, so evaluation fixtures can keep logical IDs and exact source passages even after live vector rows are replaced.
+
+Coordinated deletion is intentionally terminal for normal APIs. `DELETE /api/experiences/[id]` tombstones the source, removes mapped parents and cascading children, deletes retained revisions, extractions, and staging rows, then removes the private storage object. If storage cleanup fails, the source remains `cleanup-pending`; approved search, detail, file serving, retained export, parsing, approval, and indexing still treat it as ineligible, and only DELETE retry should use the retained cleanup path.
+
 ## Parent And Child Planning
 
 Approved indexing plans are built by [parentPlanning.ts](./parentPlanning.ts) from the retained extraction snapshot and approved canonical revision. Parent text, child citation text, and source-span metadata all come from retained normalized source blocks. The planner must not use generated summaries as quotation text.
@@ -99,6 +109,9 @@ Apply the additive Supabase migrations in order after the foundation evidence-in
 7. `20261029035315_experience_execution_locks.sql`
 8. `20261029063939_approve_experience_revision.sql`
 9. `20261029064416_create_draft_from_approved.sql`
+10. `20261029070512_publish_experience_revision.sql`
+11. `20261029071906_approved_experience_search.sql`
+12. `20261029082531_delete_experience_source.sql`
 
 The experience migrations add registry, snapshot, revision, publication-mapping, staging, private storage, and execution-lease state. They do not change the generic `documents` table, the generic `documents` storage bucket, the generic upload/search routes, or the existing foundation RPC signatures.
 
@@ -111,6 +124,16 @@ All new registry tables have RLS enabled and no browser-role grants. The storage
 Long-running stages acquire a source execution token with `acquire_experience_source_execution(source_id, stage, lease_seconds)`. Supported stages are `extracting`, `parsing`, and `indexing`; leases are finite and currently bounded to 1-3600 seconds. A competing request conflicts while an unexpired token exists. A later request can acquire a new token only after expiry.
 
 Stage completion uses `complete_experience_source_execution(...)` and succeeds only when the supplied token, stage, and unexpired lease still match the source row. This prevents an expired request from overwriting work completed under a newer token. Draft edits use `update_experience_revision_draft(revision_id, expected_draft_version, draft_json)`, which increments `draft_version` and rejects stale saves.
+
+## Indexing Checkpoints And Publication
+
+Indexing is restartable but publication is all-or-nothing. Each `POST /api/experiences/[id]/index` call acquires an `indexing` execution lease, freezes the approved parent/child plan, prepares at most the configured embedding batch, and upserts compatible rows into `experience_index_staging`. Staging rows are reusable only when the revision ID, plan hash, approved content hash, chunking version, embedding model, task type, and 1536-dimensional embedding configuration all match the frozen plan.
+
+When staging is incomplete, the endpoint completes the lease with source status `indexing` and returns progress plus `next_action: "index"`; it does not update `active_revision_id` or remove prior live parents. A retry after interruption recomputes the frozen plan, restores compatible checkpoints, and prepares only missing chunks. Failed preparation records a recoverable `indexing` failure and leaves prior active evidence unchanged.
+
+When all expected staging rows are prepared, `publish_experience_revision(...)` locks the source first and then the target revision. The RPC rejects deleted sources, stale approved candidates, altered approved content hashes, mismatched staging counts/configuration, missing/invalid child payloads, and attempts by older approved revisions to replace a newer candidate. It calls the existing `insert_project_evidence` RPC once per prepared parent inside the same transaction, writes `experience_revision_parents`, verifies the expected parent/child counts, deletes the previous active revision's mapped parents and cascading children, updates `active_revision_id`, and clears staging. Any raised error rolls back new parents, children, mappings, source updates, and staging cleanup, so the previous active revision remains visible.
+
+Publication retries are idempotent only for the current latest-approved active revision and only when the stored mappings still match the requested plan, hash, configuration, and expected counts. A valid retry returns `already_published: true` without inserting duplicate parents or reactivating superseded revisions.
 
 ## Experience API Contract
 
@@ -128,6 +151,7 @@ All experience routes are separate from generic document routes. `POST`, `PATCH`
 | `POST /api/experiences/[id]/draft-from-approved` | `{ "approved_revision_id": "..." }` or `{}` | `{ revision_id, cloned_from_revision_id, next_action: "review" }` | Creates a separate draft; accepted/indexed revisions remain unchanged. |
 | `GET /api/experiences/[id]/revisions/[revisionId]/export` | none | `StructuredExperienceExportSchema` | Trusted export of approved/indexing/indexed retained JSON, source blocks, content hash, and resolved source refs. |
 | `GET /api/experiences/[id]/file` | none | original bytes with MIME and `Content-Disposition` | Serves the private original through the server boundary only. |
+| `DELETE /api/experiences/[id]` | none | `{ status: "deleted" }` or `{ status: "cleanup-pending", next_action: "retry-delete" }` | Tombstones the source, removes mapped database evidence/history transactionally, then removes the private storage object; storage cleanup failures remain retryable. |
 
 State transitions are explicit:
 
@@ -137,11 +161,25 @@ approved --draft-from-approved--> draft
 approved/indexing/indexed --export/file--> unchanged
 ```
 
-Later indexing tasks extend `approved -> indexing -> indexed`; approval must not report indexed success. Draft save keeps the source reviewable and does not mutate active indexed evidence. Creating a draft from an approved or indexed revision updates only the latest draft pointer and source review state; it keeps `latest_approved_revision_id` and `active_revision_id` intact.
+Later indexing tasks extend `approved -> indexing -> indexed`; approval must not report indexed success. Draft save keeps the source reviewable and does not mutate active indexed evidence. Creating a draft from an approved or indexed revision updates only the latest draft pointer and source review state; it keeps `latest_approved_revision_id` and `active_revision_id` intact. Deletion moves the source to `deleted` or `cleanup-pending`; both states are ineligible for approved search and normal detail/file APIs.
 
-Recoverable API errors use stable codes. Validation failures use `draft-validation-failed` with `details.field_errors`. Version or stale-candidate conflicts use HTTP `409` codes such as `draft-version-conflict`, `approval-version-conflict`, `approval-candidate-stale`, or `draft-create-conflict`. Missing retained resources use `source-not-found`, `revision-not-found`, `revision-export-unavailable`, or `source-file-unavailable`. Browser trust-boundary failures use `cross-origin-rejected`.
+Recoverable API errors use stable codes. Validation failures use `draft-validation-failed` with `details.field_errors`. Version or stale-candidate conflicts use HTTP `409` codes such as `draft-version-conflict`, `approval-version-conflict`, `approval-candidate-stale`, or `draft-create-conflict`. Missing retained resources use `source-not-found`, `revision-not-found`, `revision-export-unavailable`, or `source-file-unavailable`. Storage cleanup retry state uses `cleanup-pending` plus `source-storage-delete-failed`. Browser trust-boundary failures use `cross-origin-rejected`.
 
 The generic routes `/api/upload`, `/api/documents`, and `/api/search` remain generic. Experience upload, review, approval, retained export, and file serving must call only `/api/experiences...` routes.
+
+## Browser Workflow And Correction Policy
+
+Use a small synthetic two-project file for browser workflow checks, for example one DOCX/PDF/DOC source with paragraphs for `Project Atlas` and `Project Beacon`, plus one unassigned note such as contact details. The expected browser path is:
+
+1. Open `/documents`, use the Experience section, and upload the source through `POST /api/experiences`; the Generic Documents section and `/api/upload` remain separate.
+2. Open the source from the Experience table, run Extract when available, then Parse when available. The detail page reloads persisted source blocks, warnings, omitted-block coverage, and the latest draft from `GET /api/experiences/[id]`.
+3. Review each project separately. Edit only supported fields, evidence kind, attribution, activity status, and source spans. Remove incorrect evidence rather than saving unsupported claims.
+4. Acknowledge extraction warnings and unassigned source blocks before saving. Save uses `PATCH /api/experiences/[id]/draft` with the current draft version; validation errors must stay visible and must not approve or index the draft.
+5. Approve only after the source-linked draft is valid. Approval uses `POST /api/experiences/[id]/approve`, freezes the revision, and shows it as ready to index without claiming indexed success.
+6. Index uses repeated `POST /api/experiences/[id]/index` calls. Progress shows embedding preparation until publication completes. A failure keeps the previously active revision visible.
+7. Inspect accepted JSON/source references through the retained export route and download the private original through the file route. The Search page still uses `/api/search` and does not run JD-fit or approved-experience retrieval in this change.
+
+Corrections in v1 are source-grounded only. A field or evidence summary may be edited when its retained source spans still support the claim. To add a fact that is absent from the uploaded source, upload a revised source file and parse a new draft. Do not use review edits, acknowledgements, or approval to turn unsupported notes into accepted evidence.
 
 ## Preflight Checks
 
@@ -181,9 +219,24 @@ supabase/checks/experience_registry.sql
 supabase/checks/evidence_index.sql
 ```
 
-`experience_registry.sql` rolls back all seeded data and verifies registry tables, RLS/grants, private bucket configuration, source reservation/retry behavior, execution-token conflicts, stale-token rejection, optimistic draft saves, pointer invariants, and immutable frozen content. `evidence_index.sql` verifies the generic foundation remains searchable/deletable and server-only. Run Supabase advisors after schema changes; existing foundation warnings should be reviewed separately from experience-ingestion warnings.
+`experience_registry.sql` rolls back all seeded data and verifies registry tables, RLS/grants, private bucket configuration, source reservation/retry behavior, execution-token conflicts, stale-token rejection, optimistic draft saves, pointer invariants, immutable frozen content, multi-parent publication, active replacement, idempotent retries, stale publication rejection, approved-search lineage, and forced rollback of invalid publication payloads. `evidence_index.sql` verifies the generic foundation remains searchable/deletable and server-only. Run Supabase advisors after schema changes; existing foundation warnings should be reviewed separately from experience-ingestion warnings.
 
 The current `@supabase/supabase-js` version expects Node 22+ for native WebSocket support in direct Node scripts. Use the project runtime's supported Node version, or provide the documented Supabase realtime transport option before running live storage smoke scripts under older Node.
+
+## Acceptance Evidence
+
+Current verification for `add-structured-project-ingestion` was recorded on 2026-10-29 against this workspace. The following checks passed:
+
+```bash
+npx tsc --noEmit
+npm run lint
+npm run build
+openspec validate add-structured-project-ingestion --type change --strict --json
+```
+
+`npm run test:experience` currently compiles the scoped test project and passes 108 of 110 tests. The two failing checks are environment/runtime acceptance checks, not source changes: real legacy DOC conversion cannot complete because LibreOffice/`soffice` is unavailable, and extraction preflight reports the same missing required DOC converter. Poppler `pdftotext` is also unavailable, so selectable PDFs use the `pdf2json` fallback in this environment. No `GEMINI_API_KEY` or `GOOGLE_API_KEY` is present in the current shell, so the opt-in live Gemini parsing smoke and a complete DOCX/DOC/PDF upload-to-approved-index acceptance run are not yet complete.
+
+Do not mark cross-workflow acceptance complete until the missing runtime dependencies and live-key smoke are supplied and the full DOCX, real DOC, and selectable-PDF upload-to-approved-index flow passes. No JD-fit generation or formal RAG quality evaluation is part of this change.
 
 ## Synthetic Parsing Smoke
 

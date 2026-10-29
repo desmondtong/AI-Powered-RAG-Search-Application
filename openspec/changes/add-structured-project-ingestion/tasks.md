@@ -52,31 +52,31 @@
 ## 7. Resumable embeddings and atomic publication
 
 - [x] 7.1 Add bounded embedding preparation and conditional staging writes keyed by approved revision/plan/configuration hashes; verify batch limits, valid 1536-dimensional vectors, progress restoration, and reuse of compatible checkpoints only.
-- [ ] 7.2 Implement transactional whole-revision publication using staged data and existing per-parent insertion RPC, with source-then-revision locking and count/hash checks; verify a forced invalid child rolls back all new parents/children/mappings.
-- [ ] 7.3 Add active replacement and idempotent publication responses; verify previous live rows remain during preparation, successful replacement removes old parents/children atomically, and retry after response loss creates no duplicates.
-- [ ] 7.4 Reject stale tokens, altered approved content, mixed embedding configurations, deleted sources, and older approved candidates; verify an older indexing request cannot replace a newer approval or reactivate a superseded revision.
+- [x] 7.2 Implement transactional whole-revision publication using staged data and existing per-parent insertion RPC, with source-then-revision locking and count/hash checks; verify a forced invalid child rolls back all new parents/children/mappings.
+- [x] 7.3 Add active replacement and idempotent publication responses; verify previous live rows remain during preparation, successful replacement removes old parents/children atomically, and retry after response loss creates no duplicates.
+- [x] 7.4 Reject stale tokens, altered approved content, mixed embedding configurations, deleted sources, and older approved candidates; verify an older indexing request cannot replace a newer approval or reactivate a superseded revision.
 - [x] 7.5 Add the index endpoint's next-batch/publish behavior and safe progress/error response; verify interrupted/failed embedding preparation resumes from compatible work without reporting indexed status early.
-- [ ] 7.6 Document indexing checkpoints, restart conditions, publication guarantees, and failure recovery; verify a development-database multi-project insertion/replacement smoke and atomic rollback checks using synthetic data.
+- [x] 7.6 Document indexing checkpoints, restart conditions, publication guarantees, and failure recovery; verify a development-database multi-project insertion/replacement smoke and atomic rollback checks using synthetic data.
 
 ## 8. Approved retrieval and deletion boundary
 
-- [ ] 8.1 Add an ingestion-owned vector RPC/helper joining active approved publications before cosine ranking/top-K, with validated optional source selection; verify all/selected/empty selection and invalid/ineligible IDs without widening search.
-- [ ] 8.2 Return parent expansion and logical citation lineage, with active membership rechecked or queried consistently; verify standalone/draft/failed/superseded/deleted evidence is excluded and filtered retrieval finds relevant selected-source chunks.
-- [ ] 8.3 Add transactional tombstone/database removal plus explicit storage cleanup and retry; verify mapped parents and cascading children disappear, accepted history/staging is removed, cleanup-pending remains ineligible, and late indexing cannot resurrect a deleted source.
-- [ ] 8.4 Document the approved-search/export contracts for JD-fit/evals and coordinated deletion; verify retained accepted revisions resolve citations before deletion and deleted sources do not resolve through normal retrieval/detail APIs.
+- [x] 8.1 Add an ingestion-owned vector RPC/helper joining active approved publications before cosine ranking/top-K, with validated optional source selection; verify all/selected/empty selection and invalid/ineligible IDs without widening search.
+- [x] 8.2 Return parent expansion and logical citation lineage, with active membership rechecked or queried consistently; verify standalone/draft/failed/superseded/deleted evidence is excluded and filtered retrieval finds relevant selected-source chunks.
+- [x] 8.3 Add transactional tombstone/database removal plus explicit storage cleanup and retry; verify mapped parents and cascading children disappear, accepted history/staging is removed, cleanup-pending remains ineligible, and late indexing cannot resurrect a deleted source.
+- [x] 8.4 Document the approved-search/export contracts for JD-fit/evals and coordinated deletion; verify retained accepted revisions resolve citations before deletion and deleted sources do not resolve through normal retrieval/detail APIs.
 
 ## 9. Documents and review UI
 
-- [ ] 9.1 Add separate Generic Documents/Experience sections and DOCX/DOC/PDF experience upload controls while retaining generic controls; verify each upload action calls only its intended API and existing previews/deletion still work.
-- [ ] 9.2 Add source-linked experience review with editable supported fields, evidence kinds/attribution/status, source-span selection, removals, warnings, and unassigned-block acknowledgement; verify invalid edits block approval and saved drafts survive reload.
-- [ ] 9.3 Add explicit Approve/Index actions, preparation progress, stage-specific retry, approved-edit/new-draft behavior, and source cleanup status; verify approval alone does not display indexed success and a failed replacement keeps the old active revision visible.
-- [ ] 9.4 Add accepted JSON/source-reference inspection and private original download, with keyboard-accessible controls and readable narrow-screen layout; verify generic content remains unaffected and the Search page still uses its existing generic API.
-- [ ] 9.5 Document the upload/review/approve/index user flow and source-grounded correction policy; verify the browser workflow follows the documented steps using a synthetic two-project experience file.
+- [x] 9.1 Add separate Generic Documents/Experience sections and DOCX/DOC/PDF experience upload controls while retaining generic controls; verify each upload action calls only its intended API and existing previews/deletion still work.
+- [x] 9.2 Add source-linked experience review with editable supported fields, evidence kinds/attribution/status, source-span selection, removals, warnings, and unassigned-block acknowledgement; verify invalid edits block approval and saved drafts survive reload.
+- [x] 9.3 Add explicit Approve/Index actions, preparation progress, stage-specific retry, approved-edit/new-draft behavior, and source cleanup status; verify approval alone does not display indexed success and a failed replacement keeps the old active revision visible.
+- [x] 9.4 Add accepted JSON/source-reference inspection and private original download, with keyboard-accessible controls and readable narrow-screen layout; verify generic content remains unaffected and the Search page still uses its existing generic API.
+- [x] 9.5 Document the upload/review/approve/index user flow and source-grounded correction policy; verify the browser workflow follows the documented steps using a synthetic two-project experience file.
 
 ## 10. Cross-workflow acceptance
 
 - [ ] 10.1 Run the complete DOCX, real DOC, and selectable-PDF upload-to-approved-index flow using synthetic experience documents; verify source passages, logical IDs, private file access, multi-project parents, exact children, and approved search results agree.
-- [ ] 10.2 Exercise cross-stage failures/concurrency: invalid parse, stale review/approval, expired execution token, interrupted embeddings, failed publication, overlapping approvals, response loss, replacement, and delete-versus-index; verify no partial active index, stale resurrection, or duplicate publication.
+- [x] 10.2 Exercise cross-stage failures/concurrency: invalid parse, stale review/approval, expired execution token, interrupted embeddings, failed publication, overlapping approvals, response loss, replacement, and delete-versus-index; verify no partial active index, stale resurrection, or duplicate publication.
 - [ ] 10.3 Run generic upload/search/list/detail/file/deletion regressions and the new automated checks, `npm run lint`, `npx tsc --noEmit`, and production build; verify unchanged generic contracts and no source/credential leakage in browser responses or logs.
 - [ ] 10.4 Validate OpenSpec strictly, record acceptance evidence and configured limits in implementation documentation, and clean synthetic database/storage artifacts; verify all tracked tasks reflect actual completion without implementing JD-fit or formal RAG evaluations.
 

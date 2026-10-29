@@ -14,7 +14,7 @@ function contentDisposition(fileName: string) {
   return `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 }
 
-export async function GET(req: Request, context: { params: { id?: string } | Promise<{ id?: string }> }) {
+export async function GET(req: Request, context: { params: Promise<{ id?: string }> }) {
   try {
     assertTrustedReadBoundary(req);
     const sourceId = await getRouteSourceId(context);

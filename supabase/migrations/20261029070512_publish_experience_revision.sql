@@ -28,6 +28,8 @@ DECLARE
   parent_record record;
   inserted jsonb;
   inserted_parent_id uuid;
+  existing_parent_count integer;
+  existing_child_count integer;
 BEGIN
   IF p_plan_hash IS NULL OR btrim(p_plan_hash) = '' THEN
     RAISE EXCEPTION 'plan_hash is required';
@@ -73,32 +75,53 @@ BEGIN
       USING ERRCODE = '40001';
   END IF;
 
+  IF source_row.latest_approved_revision_id IS DISTINCT FROM p_revision_id THEN
+    RAISE EXCEPTION 'Experience publication candidate is stale'
+      USING ERRCODE = '40001';
+  END IF;
+  IF revision_row.approved_content_hash IS DISTINCT FROM lower(btrim(p_approved_content_hash)) THEN
+    RAISE EXCEPTION 'Approved content hash does not match retained revision'
+      USING ERRCODE = '40001';
+  END IF;
+
   IF source_row.active_revision_id = p_revision_id
      AND revision_row.status = 'indexed' THEN
+    SELECT count(DISTINCT rp.parent_id)::integer,
+           COALESCE(sum(child_counts.child_count), 0)::integer
+      INTO existing_parent_count, existing_child_count
+    FROM public.experience_revision_parents rp
+    LEFT JOIN LATERAL (
+      SELECT count(*)::integer AS child_count
+      FROM public.document_chunks c
+      WHERE c.parent_id = rp.parent_id
+    ) child_counts ON true
+    WHERE rp.revision_id = p_revision_id
+      AND rp.plan_hash = p_plan_hash
+      AND rp.metadata->>'approved_content_hash' = lower(btrim(p_approved_content_hash))
+      AND rp.metadata->>'chunking_version' = p_chunking_version
+      AND rp.metadata->>'embedding_model' = p_embedding_model
+      AND COALESCE(rp.metadata->>'embedding_task_type', 'RETRIEVAL_DOCUMENT') = p_embedding_task_type
+      AND COALESCE((rp.metadata->>'embedding_dimensions')::integer, 1536) = p_embedding_dimensions;
+
+    IF existing_parent_count <> p_expected_parent_count
+       OR existing_child_count <> p_expected_child_count THEN
+      RAISE EXCEPTION 'Existing publication does not match expected counts or configuration'
+        USING ERRCODE = '40001';
+    END IF;
+
     RETURN jsonb_build_object(
       'status', 'indexed',
       'already_published', true,
       'revision_id', p_revision_id,
       'active_revision_id', source_row.active_revision_id,
-      'parent_count', (
-        SELECT count(*)
-        FROM public.experience_revision_parents
-        WHERE revision_id = p_revision_id
-      ),
-      'child_count', p_expected_child_count
+      'parent_count', existing_parent_count,
+      'child_count', existing_child_count,
+      'plan_hash', p_plan_hash
     );
   END IF;
 
-  IF source_row.latest_approved_revision_id IS DISTINCT FROM p_revision_id THEN
-    RAISE EXCEPTION 'Experience publication candidate is stale'
-      USING ERRCODE = '40001';
-  END IF;
   IF revision_row.status NOT IN ('approved', 'indexing') THEN
     RAISE EXCEPTION 'Experience revision is not publishable'
-      USING ERRCODE = '40001';
-  END IF;
-  IF revision_row.approved_content_hash IS DISTINCT FROM lower(btrim(p_approved_content_hash)) THEN
-    RAISE EXCEPTION 'Approved content hash does not match retained revision'
       USING ERRCODE = '40001';
   END IF;
   IF EXISTS (

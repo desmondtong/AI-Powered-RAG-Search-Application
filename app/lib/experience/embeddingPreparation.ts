@@ -22,8 +22,26 @@ export const EXPERIENCE_EMBEDDING_PREPARATION_TIMEOUT_MS = readPositiveInt(
   75_000,
 );
 
+interface SupabaseErrorLike {
+  message?: string;
+}
+
+interface StagingQueryResult {
+  then(resolve: (value: { data: unknown; error: SupabaseErrorLike | null }) => void): unknown;
+}
+
+interface ExperienceIndexStagingQuery {
+  select(columns: string): {
+    eq(column: string, value: string): StagingQueryResult;
+  };
+  upsert(
+    rows: ExperienceIndexStagingRow[],
+    options?: { onConflict: string },
+  ): StagingQueryResult;
+}
+
 export interface ExperienceEmbeddingPreparationClient {
-  from(table: string): any;
+  from(table: "experience_index_staging"): ExperienceIndexStagingQuery;
 }
 
 export interface ExperienceIndexStagingRow {

@@ -6,7 +6,7 @@ import {
 } from "../../../../lib/experience/apiRoutes";
 import { saveExperienceDraft } from "../../../../lib/experience/apiService";
 
-export async function PATCH(req: Request, context: { params: { id?: string } | Promise<{ id?: string }> }) {
+export async function PATCH(req: Request, context: { params: Promise<{ id?: string }> }) {
   try {
     assertSameOriginMutation(req);
     const sourceId = await getRouteSourceId(context);

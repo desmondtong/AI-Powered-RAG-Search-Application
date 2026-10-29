@@ -60,13 +60,13 @@ export function requireExperienceRevisionId(id: string | null | undefined): stri
   return value;
 }
 
-export async function getRouteSourceId(context: { params: { id?: string } | Promise<{ id?: string }> }) {
+export async function getRouteSourceId(context: { params: Promise<{ id?: string }> }) {
   const params = await context.params;
   return requireExperienceSourceId(params.id);
 }
 
 export async function getRouteSourceAndRevisionIds(
-  context: { params: { id?: string; revisionId?: string } | Promise<{ id?: string; revisionId?: string }> },
+  context: { params: Promise<{ id?: string; revisionId?: string }> },
 ) {
   const params = await context.params;
   return {

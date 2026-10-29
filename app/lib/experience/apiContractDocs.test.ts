@@ -21,6 +21,7 @@ describe("experience API contract documentation", () => {
       "POST /api/experiences/[id]/draft-from-approved",
       "GET /api/experiences/[id]/revisions/[revisionId]/export",
       "GET /api/experiences/[id]/file",
+      "DELETE /api/experiences/[id]",
     ]) {
       assert.match(readme, new RegExp(route.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }
@@ -32,6 +33,8 @@ describe("experience API contract documentation", () => {
       "approval-candidate-stale",
       "revision-export-unavailable",
       "source-file-unavailable",
+      "cleanup-pending",
+      "source-storage-delete-failed",
       "cross-origin-rejected",
     ]) {
       assert.match(readme, new RegExp(errorCode));
@@ -41,5 +44,9 @@ describe("experience API contract documentation", () => {
     assert.match(readme, /\/api\/documents/);
     assert.match(readme, /\/api\/search/);
     assert.match(readme, /remain generic/);
+    assert.match(readme, /Approved Search, Export, And Deletion Contracts/);
+    assert.match(readme, /Superseded accepted revisions remain exportable before source deletion/);
+    assert.match(readme, /approved search, detail, file serving, retained export, parsing, approval, and indexing still treat it as ineligible/);
+    assert.match(readme, /20261029082531_delete_experience_source\.sql/);
   });
 });

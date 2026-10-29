@@ -26,6 +26,7 @@ import {
   EXPERIENCE_EMBEDDING_PREPARATION_BATCH_SIZE,
   EXPERIENCE_EMBEDDING_PREPARATION_TIMEOUT_MS,
   prepareExperienceEmbeddingBatch,
+  type ExperienceEmbeddingPreparationClient,
 } from "./embeddingPreparation";
 import {
   ExperienceValidationError,
@@ -200,6 +201,8 @@ export function availableExperienceActions(status: string): ExperienceAction[] {
     case "indexing":
       return ["index"];
     case "failed":
+      return ["retry"];
+    case "cleanup-pending":
       return ["retry"];
     case "indexed":
       return ["review", "parse"];
@@ -392,6 +395,24 @@ async function downloadPrivateSource(row: SourceRow, client: ExperienceServiceCl
     throw new ExperienceApiError("source-file-unavailable", error ? errorMessage(error) : "Private source file is unavailable.", 404);
   }
   return Buffer.from(await data.arrayBuffer());
+}
+
+async function updateSourceCleanupStatus(
+  sourceId: string,
+  status: "deleted" | "cleanup-pending",
+  cleanupError: Record<string, unknown> | null,
+  client: ExperienceServiceClient,
+) {
+  const { error } = await client
+    .from("experience_sources")
+    .update({
+      status,
+      cleanup_error: cleanupError,
+    })
+    .eq("id", sourceId);
+  if (error) {
+    throw new ExperienceApiError("source-cleanup-status-failed", errorMessage(error), 500);
+  }
 }
 
 async function extractTextForExperienceSource(buffer: Buffer, descriptor: ExperienceSourceFileDescriptor) {
@@ -983,7 +1004,7 @@ export async function indexExperienceRevision(
     const preparation = await prepareExperienceEmbeddingBatch({
       snapshot,
       revision: approvedRevision,
-      client: supabase,
+      client: supabase as unknown as ExperienceEmbeddingPreparationClient,
       batchSize: options.batchSize ?? EXPERIENCE_EMBEDDING_PREPARATION_BATCH_SIZE,
       maxDurationMs: options.maxDurationMs ?? EXPERIENCE_EMBEDDING_PREPARATION_TIMEOUT_MS,
       embed: options.embed,
@@ -1197,5 +1218,65 @@ export async function getExperienceSourceFile(sourceId: string, client?: Experie
     file_type: source.original_file_type || "application/octet-stream",
     file_size: source.original_file_size,
     bytes,
+  };
+}
+
+export async function deleteExperienceSource(sourceId: string, client?: ExperienceServiceClient) {
+  const supabase = getClient(client);
+  const { data, error } = await supabase.rpc("delete_experience_source", {
+    p_source_id: sourceId,
+  });
+  if (error) {
+    const message = errorMessage(error);
+    if (error.code === "40001" || message.toLowerCase().includes("unavailable")) {
+      throw new ExperienceApiError("source-not-found", message, 404);
+    }
+    throw new ExperienceApiError("source-delete-failed", message, 500);
+  }
+
+  const deletion = (firstRow<Record<string, unknown>>(data) ?? (data as Record<string, unknown> | null)) || {};
+  const storageBucket = typeof deletion.storage_bucket === "string" ? deletion.storage_bucket : "";
+  const storagePath = typeof deletion.storage_path === "string" ? deletion.storage_path : "";
+  if (!storageBucket || !storagePath) {
+    throw new ExperienceApiError("source-storage-metadata-missing", "Experience source storage metadata is missing.", 500);
+  }
+
+  const { error: storageError } = await supabase.storage.from(storageBucket).remove([storagePath]);
+  if (storageError) {
+    const cleanupError = {
+      stage: "storage-cleanup",
+      code: "source-storage-delete-failed",
+      message: errorMessage(storageError),
+      recoverable_action: "retry-delete",
+    };
+    await updateSourceCleanupStatus(sourceId, "cleanup-pending", cleanupError, supabase);
+    return {
+      source_id: sourceId,
+      status: "cleanup-pending",
+      deleted: false,
+      cleanup_pending: true,
+      cleanup_error: cleanupError,
+      storage: {
+        bucket: storageBucket,
+        path: storagePath,
+      },
+      database: deletion,
+      next_action: "retry-delete",
+    };
+  }
+
+  await updateSourceCleanupStatus(sourceId, "deleted", null, supabase);
+  return {
+    source_id: sourceId,
+    status: "deleted",
+    deleted: true,
+    cleanup_pending: false,
+    cleanup_error: null,
+    storage: {
+      bucket: storageBucket,
+      path: storagePath,
+    },
+    database: deletion,
+    next_action: null,
   };
 }

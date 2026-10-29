@@ -7,7 +7,7 @@ export const EXPERIENCE_EXTRACTION_LIMITS = {
 } as const;
 
 export type ExperienceSourceBytes = ArrayBuffer | Uint8Array | Buffer;
-export type ExperienceSourceFileKind = "pdf" | "docx" | "doc";
+export type ExperienceSourceFileKind = "pdf" | "docx";
 
 export type ExperienceValidationErrorCode =
   | "deadline-exceeded"
@@ -76,9 +76,7 @@ const DOCX_MIME_TYPES = new Set([
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/zip",
 ]);
-const DOC_MIME_TYPES = new Set(["application/msword"]);
 const UNKNOWN_MIME_TYPES = new Set(["", "application/octet-stream", "binary/octet-stream"]);
-const OLE_SIGNATURE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
 const ZIP_EOCD_SIGNATURE = 0x06054b50;
 const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
 const ZIP64_SIZE_MARKER = 0xffffffff;
@@ -117,10 +115,10 @@ function toBuffer(bytes: ExperienceSourceBytes) {
 function extensionForFileName(fileName: string): ExperienceSourceFileKind {
   const match = fileName.toLowerCase().match(/\.([a-z0-9]{1,16})$/);
   const extension = match?.[1];
-  if (extension === "pdf" || extension === "docx" || extension === "doc") {
+  if (extension === "pdf" || extension === "docx") {
     return extension;
   }
-  throw new ExperienceValidationError("unsupported-extension", "Experience uploads support DOCX, DOC, or PDF files.", {
+  throw new ExperienceValidationError("unsupported-extension", "Experience uploads support DOCX or PDF files.", {
     fileName,
   });
 }
@@ -136,7 +134,7 @@ function expectedMimeTypes(kind: ExperienceSourceFileKind) {
   if (kind === "docx") {
     return DOCX_MIME_TYPES;
   }
-  return DOC_MIME_TYPES;
+  return PDF_MIME_TYPES;
 }
 
 function assertPlausibleMimeType(kind: ExperienceSourceFileKind, fileType: string) {
@@ -148,10 +146,6 @@ function assertPlausibleMimeType(kind: ExperienceSourceFileKind, fileType: strin
     kind,
     fileType,
   });
-}
-
-function hasSignature(buffer: Buffer, signature: Buffer) {
-  return buffer.length >= signature.length && signature.every((byte, index) => buffer[index] === byte);
 }
 
 function isPdf(buffer: Buffer) {
@@ -280,8 +274,6 @@ export function validateExperienceSourceFile(
     }
   } else if (extension === "docx") {
     expandedBytes = validateDocxContainer(buffer, limits.maxDocxExpandedBytes);
-  } else if (!hasSignature(buffer, OLE_SIGNATURE)) {
-    throw new ExperienceValidationError("container-mismatch", "Legacy DOC file does not have an OLE document signature.");
   }
 
   assertExperienceDeadline(input.deadline, input.nowMs);

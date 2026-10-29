@@ -169,7 +169,7 @@ The generic routes `/api/upload`, `/api/documents`, and `/api/search` remain gen
 
 ## Browser Workflow And Correction Policy
 
-Use a small synthetic two-project file for browser workflow checks, for example one DOCX/PDF/DOC source with paragraphs for `Project Atlas` and `Project Beacon`, plus one unassigned note such as contact details. The expected browser path is:
+Use a small synthetic two-project file for browser workflow checks, for example one DOCX/PDF source with paragraphs for `Project Atlas` and `Project Beacon`, plus one unassigned note such as contact details. The expected browser path is:
 
 1. Open `/documents`, use the Experience section, and upload the source through `POST /api/experiences`; the Generic Documents section and `/api/upload` remain separate.
 2. Open the source from the Experience table, run Extract when available, then Parse when available. The detail page reloads persisted source blocks, warnings, omitted-block coverage, and the latest draft from `GET /api/experiences/[id]`.
@@ -190,14 +190,13 @@ npm run test:experience
 npx tsc --noEmit
 ```
 
-The scoped test suite includes synthetic DOCX extraction, real legacy DOC conversion through LibreOffice into DOCX, selectable-PDF extraction, validation failures for unusable inputs, and snapshot round-trip checks. `runExperienceExtractionPreflight()` in [extractionPreflight.ts](./extractionPreflight.ts) performs a runtime check for:
+The scoped test suite includes synthetic DOCX extraction, selectable-PDF extraction, validation failures for unsupported or unusable inputs, and snapshot round-trip checks. `runExperienceExtractionPreflight()` in [extractionPreflight.ts](./extractionPreflight.ts) performs a runtime check for:
 
-- LibreOffice/`soffice`, required for legacy `.doc` conversion.
 - Poppler `pdftotext`, preferred for selectable PDFs when installed.
 - `pdf2json`, retained as the selectable-PDF fallback when Poppler is absent.
-- Mammoth, required for DOCX text extraction after direct DOCX upload or DOC conversion.
+- Mammoth, required for DOCX text extraction.
 
-Supported experience source formats are DOCX, legacy binary DOC, and selectable-text PDF. Generic TXT upload remains available only through the generic document workflow. OCR, scanned-only PDFs, encrypted documents, user-authored JSON, and HTML rendering of converted documents are out of scope.
+Supported experience source formats are DOCX and selectable-text PDF. Legacy binary DOC, generic TXT, OCR, scanned-only PDFs, encrypted documents, user-authored JSON, and HTML rendering of converted documents are out of scope. Users who need legacy DOC ingestion should convert the file to DOCX before upload.
 
 Runtime defaults are intentionally bounded:
 
@@ -207,10 +206,7 @@ Runtime defaults are intentionally bounded:
 | DOCX expanded ZIP content | 50 MiB |
 | Retained normalized extracted text | 60,000 UTF-16 code units |
 | Retained source block | 2,000 UTF-16 code units |
-| Legacy DOC conversion timeout | 30 seconds |
-| Converted DOCX output | 10 MiB |
-
-Legacy DOC conversion runs through `execFile` with fixed temporary filenames, an isolated LibreOffice profile directory, no shell interpolation, finite stdout/stderr buffers, and recursive cleanup in `finally`. Set `LIBREOFFICE_PATH` when `soffice` is not on `PATH`. Set `PDFTOTEXT_PATH` when Poppler is installed outside the default lookup path. A missing Poppler binary is not fatal, but a missing LibreOffice binary prevents DOC support and must be resolved before enabling DOC uploads.
+Set `PDFTOTEXT_PATH` when Poppler is installed outside the default lookup path. A missing Poppler binary is not fatal because selectable PDFs can use the `pdf2json` fallback.
 
 Then run the database smoke checks against the intended Supabase database:
 
@@ -228,15 +224,16 @@ The current `@supabase/supabase-js` version expects Node 22+ for native WebSocke
 Current verification for `add-structured-project-ingestion` was recorded on 2026-10-29 against this workspace. The following checks passed:
 
 ```bash
+npm run test:experience
 npx tsc --noEmit
 npm run lint
 npm run build
 openspec validate add-structured-project-ingestion --type change --strict --json
 ```
 
-`npm run test:experience` currently compiles the scoped test project and passes 108 of 110 tests. The two failing checks are environment/runtime acceptance checks, not source changes: real legacy DOC conversion cannot complete because LibreOffice/`soffice` is unavailable, and extraction preflight reports the same missing required DOC converter. Poppler `pdftotext` is also unavailable, so selectable PDFs use the `pdf2json` fallback in this environment. No `GEMINI_API_KEY` or `GOOGLE_API_KEY` is present in the current shell, so the opt-in live Gemini parsing smoke and a complete DOCX/DOC/PDF upload-to-approved-index acceptance run are not yet complete.
+`npm run test:experience` passes without LibreOffice because legacy DOC conversion is out of scope for v1. Poppler `pdftotext` is optional; selectable PDFs use the `pdf2json` fallback when Poppler is unavailable. No `GEMINI_API_KEY` or `GOOGLE_API_KEY` is present in the current shell, so the opt-in live Gemini parsing smoke and a complete DOCX/PDF upload-to-approved-index acceptance run are not yet complete.
 
-Do not mark cross-workflow acceptance complete until the missing runtime dependencies and live-key smoke are supplied and the full DOCX, real DOC, and selectable-PDF upload-to-approved-index flow passes. No JD-fit generation or formal RAG quality evaluation is part of this change.
+Do not mark cross-workflow acceptance complete until the live-key smoke is supplied and the full DOCX and selectable-PDF upload-to-approved-index flow passes. No JD-fit generation or formal RAG quality evaluation is part of this change.
 
 ## Synthetic Parsing Smoke
 

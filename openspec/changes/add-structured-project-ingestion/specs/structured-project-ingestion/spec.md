@@ -7,15 +7,15 @@ Turns personal experience files into source-linked structured revisions that a u
 ## ADDED Requirements
 
 ### Requirement: Separate experience upload workflow
-The system SHALL accept DOCX, legacy DOC, and selectable-text PDF experience files through a workflow separate from generic document upload. It SHALL NOT require user-authored JSON or perform OCR.
+The system SHALL accept DOCX and selectable-text PDF experience files through a workflow separate from generic document upload. It SHALL NOT require user-authored JSON, perform OCR, or convert legacy binary DOC files in v1.
 
 #### Scenario: Experience file is uploaded
 - **WHEN** the user uploads a supported experience file
 - **THEN** the system creates or resolves a source identity and begins an experience ingestion workflow without inserting generic document chunks
 
-#### Scenario: Legacy DOC conversion is unavailable
-- **WHEN** the user uploads a DOC file and the required conversion capability is unavailable
-- **THEN** the system reports an actionable conversion-dependency error without publishing evidence
+#### Scenario: Legacy DOC is uploaded
+- **WHEN** the user uploads a legacy binary DOC file
+- **THEN** the system reports the unsupported format without extracting, parsing, or publishing evidence
 
 #### Scenario: Unsupported or unreadable file
 - **WHEN** the file is unsupported, encrypted without usable text, image-only, empty, or still unusably garbled after available extraction attempts

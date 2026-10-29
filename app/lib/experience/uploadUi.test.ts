@@ -15,13 +15,13 @@ describe("documents upload UI contracts", () => {
     assert.equal(generic.endpoint, "/api/upload");
     assert.equal(generic.accept, ".pdf,.docx,.txt");
     assert.equal(experience.endpoint, "/api/experiences");
-    assert.equal(experience.accept, ".pdf,.docx,.doc");
+    assert.equal(experience.accept, ".pdf,.docx");
   });
 
   it("interprets generic and experience upload responses without mixing contracts", () => {
     assert.equal(isDocumentsUploadSuccess("generic", { success: true, fileName: "notes.pdf", chunks: 3 }), true);
     assert.equal(isDocumentsUploadSuccess("generic", { source: { id: "source-1" } }), false);
-    assert.equal(isDocumentsUploadSuccess("experience", { source: { id: "source-1", file_name: "work.doc" } }), true);
+    assert.equal(isDocumentsUploadSuccess("experience", { source: { id: "source-1", file_name: "work.docx" } }), true);
     assert.equal(isDocumentsUploadSuccess("experience", { success: true, fileName: "notes.pdf", chunks: 3 }), false);
 
     assert.match(
@@ -31,8 +31,8 @@ describe("documents upload UI contracts", () => {
     assert.match(
       getDocumentsUploadSuccessMessage(
         "experience",
-        { source: { file_name: "work.doc" }, next_action: "extract" },
-        "fallback.doc",
+        { source: { file_name: "work.docx" }, next_action: "extract" },
+        "fallback.docx",
       ),
       /Next action: extract/,
     );

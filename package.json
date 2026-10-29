@@ -7,7 +7,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "test:experience": "tsc -p tsconfig.experience-tests.json && node --test .experience-test-build/app/lib/experience/*.test.js"
+    "test:experience": "rm -rf .experience-test-build && tsc -p tsconfig.experience-tests.json && node --test .experience-test-build/app/lib/experience/*.test.js"
   },
   "dependencies": {
     "@google/genai": "^2.31.0",

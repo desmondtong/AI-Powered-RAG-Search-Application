@@ -10,7 +10,6 @@ import {
   resolveRevisionSourceReferences,
   StructuredExperienceExportSchema,
 } from "./contracts";
-import { convertLegacyDocToDocx } from "./docConversion";
 import {
   persistExperienceDraft,
   recordExperienceParseFailure,
@@ -421,19 +420,6 @@ async function extractTextForExperienceSource(buffer: Buffer, descriptor: Experi
     return {
       segments: [{ text, locator: { kind: "unknown" as const } }],
       warnings: [],
-    };
-  }
-
-  if (descriptor.kind === "doc") {
-    const converted = await convertLegacyDocToDocx({
-      bytes: buffer,
-      sourceFileName: descriptor.fileName,
-      sourceFileType: descriptor.fileType,
-    });
-    const result = await mammoth.extractRawText({ buffer: converted.bytes });
-    return {
-      segments: [{ text: result.value, locator: { kind: "unknown" as const } }],
-      warnings: result.messages.map((message) => message.message).filter(Boolean),
     };
   }
 

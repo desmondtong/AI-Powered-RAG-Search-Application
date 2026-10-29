@@ -14,9 +14,8 @@ export interface RuntimeToolCheck {
 
 export interface ExperienceExtractionPreflightResult {
   ok: boolean;
-  supportedFormats: Array<"docx" | "doc" | "pdf">;
+  supportedFormats: Array<"docx" | "pdf">;
   limits: typeof EXPERIENCE_EXTRACTION_LIMITS;
-  libreOffice: RuntimeToolCheck;
   pdftotext: RuntimeToolCheck;
   mammoth: RuntimeToolCheck;
   pdf2json: RuntimeToolCheck;
@@ -24,7 +23,6 @@ export interface ExperienceExtractionPreflightResult {
 }
 
 export interface ExperienceExtractionPreflightOptions {
-  libreOfficePath?: string;
   pdftotextPath?: string;
   timeoutMs?: number;
 }
@@ -76,11 +74,9 @@ export async function runExperienceExtractionPreflight(
   options: ExperienceExtractionPreflightOptions = {},
 ): Promise<ExperienceExtractionPreflightResult> {
   const timeoutMs = options.timeoutMs ?? 3000;
-  const libreOfficeCommand = options.libreOfficePath || process.env.LIBREOFFICE_PATH || "soffice";
   const pdftotextCommand = options.pdftotextPath || process.env.PDFTOTEXT_PATH || "pdftotext";
 
-  const [libreOffice, pdftotext, mammoth, pdf2json] = await Promise.all([
-    checkCommand("LibreOffice", libreOfficeCommand, ["--version"], timeoutMs),
+  const [pdftotext, mammoth, pdf2json] = await Promise.all([
     checkCommand("Poppler pdftotext", pdftotextCommand, ["-v"], timeoutMs),
     checkModule("Mammoth", () => import("mammoth")),
     checkModule("pdf2json", () => import("pdf2json")),
@@ -92,10 +88,9 @@ export async function runExperienceExtractionPreflight(
   }
 
   return {
-    ok: libreOffice.available && mammoth.available && pdf2json.available,
-    supportedFormats: ["docx", "doc", "pdf"],
+    ok: mammoth.available && pdf2json.available,
+    supportedFormats: ["docx", "pdf"],
     limits: EXPERIENCE_EXTRACTION_LIMITS,
-    libreOffice,
     pdftotext,
     mammoth,
     pdf2json,

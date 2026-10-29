@@ -9,7 +9,7 @@ Observed implementation:
 - Next.js App Router uses server routes with the Supabase service role. There is no application authentication or multi-user ownership model.
 - `app/api/upload/route.ts` currently combines storage, text extraction, generic chunking, embeddings, and individual inserts into `documents`. It accepts PDF/DOCX/TXT, not DOC.
 - PDF extraction prefers Poppler `pdftotext`, then `pdf2json`; normalization and narrow garbling heuristics already exist. The fallback can still return questionable text, so experience ingestion needs a final quality check.
-- Mammoth extracts DOCX raw text. Neither Poppler nor LibreOffice was discoverable on this machine during planning; installation must be verified during implementation, not assumed.
+- Mammoth extracts DOCX raw text. Poppler was not discoverable on this machine during planning; installation must be verified during implementation when preferred PDF extraction is required, not assumed.
 - `app/lib/gemini.ts` already separates retrieval-document and retrieval-query embedding tasks and fixes embeddings at 1536 dimensions. Its generic answer helper defaults to 512 output tokens and is unsuitable for structured extraction.
 - `insertProjectEvidence` prepares embeddings and atomically inserts one parent with children. Separate calls for several parents do not provide document-wide atomicity.
 - `searchProjectEvidence` searches all child rows and expands parents; it does not know approval state or source selection.
@@ -64,7 +64,7 @@ Move reusable extraction/normalization into server utilities while preserving ge
 1. Verify extension, plausible MIME/container signature, byte limits, and actual nonempty file data before parsing or invoking converters. Check DOCX archive expansion bounds as well as compressed upload size.
 2. For PDF, retain the existing Poppler-first/fallback strategy and run the final normalized output through usability checks regardless of extractor. These checks are heuristics, not a guarantee; show retained extraction to the reviewer. Do not use the LLM to repair unreadable characters or perform OCR.
 3. For DOCX, use Mammoth raw text, retaining warnings. Do not render untrusted converted HTML.
-4. For legacy binary DOC, use configured `LIBREOFFICE_PATH` or a discovered `soffice` executable for headless conversion into DOCX, then use the same Mammoth path. Execute with an argument array, isolated temporary input/output/profile directories, finite timeout/output limits, and cleanup in `finally`. Do not invoke a shell, execute macros, permit external resource fetching, or trust arbitrary supplied filenames. A deployment must isolate converter execution and verify its security settings.
+4. Reject legacy binary DOC as unsupported in v1. Users who need DOC ingestion should convert it to DOCX outside the workflow before upload.
 5. Normalize only mechanical extraction artifacts such as NULs and line endings. Store the exact result; never normalize again after citation offsets have been assigned.
 6. Create ordered blocks at paragraph/page boundaries where available, with a deterministic bounded split for long blocks. Store whole-text offsets and recoverable location information. Do not invent page numbers for flattened fallback output.
 
@@ -82,12 +82,12 @@ Initial configurable bounds, recorded as implementation defaults:
 | Structured generation output | 16,384 tokens, within selected model capability |
 | Experiences / evidence items per revision | 16 / 80 |
 | Published child chunks per revision | 300 |
-| Converter / extraction / parsing request | 30 / 45 / 120 seconds |
+| Extraction / parsing request | 45 / 120 seconds |
 | Embedding preparation batch | At most 3 chunks and 75 seconds per request |
 
 Validate model input token count and supported output configuration before generation. Bounds are safety limits, not permission to silently cut text, drop projects, or accept an incomplete model response. Over-limit documents receive split/reduce guidance. Large-document map/reduce parsing is deferred rather than added implicitly.
 
-Alternatives: cloud document parsing/OCR, or pretending DOC and DOCX use the same parser. Rejected to keep the approved personal/text-based scope explicit. Requiring DOCX conversion by the user would not meet the requested DOC support.
+Alternatives: cloud document parsing/OCR, or pretending DOC and DOCX use the same parser. Rejected to keep the approved personal/text-based scope explicit. Legacy DOC support is deferred; users can convert DOC to DOCX before upload for v1.
 
 ### Decision 3: Separate model proposal from the validated canonical JSON
 
@@ -226,7 +226,7 @@ Alternative: rely on table RLS while exposing public API/file URLs, or silently 
 
 ## Risks / Trade-offs
 
-- DOC conversion adds native runtime and security requirements -> Document/install LibreOffice, isolate execution, disable macros/external fetching, enforce deadlines, and require a real DOC acceptance fixture.
+- Legacy DOC support would add native runtime and security requirements -> Defer DOC conversion for v1 and reject `.doc` uploads explicitly.
 - PDF usability heuristics miss some corrupt extraction -> Retain both fallback behavior and final checks, expose exact source text and warnings during review, and block clearly unusable input.
 - Constrained JSON still misinterprets source claims -> Mandatory human review, attribution/status fields, source references, and explicit unknown values; no claim that schema validation proves truth.
 - Personal experience documents can exceed request/model limits -> Bound stages and prompt sizes, checkpoint embeddings, reject oversize text clearly, and defer arbitrary-size parsing.
@@ -243,7 +243,7 @@ Alternative: rely on table RLS while exposing public API/file URLs, or silently 
 3. Apply additive registry/staging/publication/search/deletion migrations and create the private bucket. Verify grants, foreign keys, active-pointer invariants, and atomic rollback.
 4. Install/verify converter binaries and document the Node-capable private deployment and configured execution limits.
 5. Add staged experience APIs and Documents/detail review UI. Enable the feature only after migrations and runtime dependencies pass preflight.
-6. Verify real DOCX/DOC/selectable-PDF extraction, source-linked review, approval, resumable embeddings, multi-parent publication, approved filtering, replacement, deletion, and generic compatibility.
+6. Verify real DOCX/selectable-PDF extraction, source-linked review, approval, resumable embeddings, multi-parent publication, approved filtering, replacement, deletion, and generic compatibility.
 7. Retain the accepted revision export/search contract as the dependency for the subsequent JD-fit proposal.
 
 Rollback:

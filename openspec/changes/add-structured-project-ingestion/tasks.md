@@ -20,9 +20,9 @@
 
 - [x] 3.1 Extract reusable PDF/DOCX/TXT utilities from the generic upload route without changing its accepted formats or response contract; verify existing generic PDF/DOCX/TXT extraction and upload regression checks.
 - [x] 3.2 Add experience-specific extension/MIME/container, compressed/expanded size, final text-quality, and deadline validation; verify empty, mislabeled, oversized, encrypted/unusable, scanned-only, and garbled-fallback cases fail before LLM parsing.
-- [x] 3.3 Add isolated bounded LibreOffice DOC-to-DOCX conversion, safe argument/path handling, converter configuration, and temporary cleanup; verify a real legacy DOC fixture, absent converter, conversion failure/timeout, and cleanup paths.
+- [x] 3.3 Reject legacy DOC as unsupported for v1 without invoking conversion; verify `.doc` upload validation fails before extraction/parsing while DOCX remains supported.
 - [x] 3.4 Persist ordered normalized extraction blocks and snapshot hashes/warnings/available locators; verify extraction round trips, mechanical normalization, bounded block splitting, unchanged citations after reload, and no invented file coordinates.
-- [x] 3.5 Document Poppler/LibreOffice installation, converter isolation, supported text-only formats, and extraction limits; run a runtime preflight and real DOCX/DOC/selectable-PDF extraction smoke with synthetic files.
+- [x] 3.5 Document Poppler fallback behavior, supported text-only formats, and extraction limits; run a runtime preflight and real DOCX/selectable-PDF extraction smoke with synthetic files.
 
 ## 4. Source-grounded LLM parsing
 
@@ -67,7 +67,7 @@
 
 ## 9. Documents and review UI
 
-- [x] 9.1 Add separate Generic Documents/Experience sections and DOCX/DOC/PDF experience upload controls while retaining generic controls; verify each upload action calls only its intended API and existing previews/deletion still work.
+- [x] 9.1 Add separate Generic Documents/Experience sections and DOCX/PDF experience upload controls while retaining generic controls; verify each upload action calls only its intended API and existing previews/deletion still work.
 - [x] 9.2 Add source-linked experience review with editable supported fields, evidence kinds/attribution/status, source-span selection, removals, warnings, and unassigned-block acknowledgement; verify invalid edits block approval and saved drafts survive reload.
 - [x] 9.3 Add explicit Approve/Index actions, preparation progress, stage-specific retry, approved-edit/new-draft behavior, and source cleanup status; verify approval alone does not display indexed success and a failed replacement keeps the old active revision visible.
 - [x] 9.4 Add accepted JSON/source-reference inspection and private original download, with keyboard-accessible controls and readable narrow-screen layout; verify generic content remains unaffected and the Search page still uses its existing generic API.
@@ -75,9 +75,9 @@
 
 ## 10. Cross-workflow acceptance
 
-- [ ] 10.1 Run the complete DOCX, real DOC, and selectable-PDF upload-to-approved-index flow using synthetic experience documents; verify source passages, logical IDs, private file access, multi-project parents, exact children, and approved search results agree.
+- [ ] 10.1 Run the complete DOCX and selectable-PDF upload-to-approved-index flow using synthetic experience documents; verify source passages, logical IDs, private file access, multi-project parents, exact children, and approved search results agree.
 - [x] 10.2 Exercise cross-stage failures/concurrency: invalid parse, stale review/approval, expired execution token, interrupted embeddings, failed publication, overlapping approvals, response loss, replacement, and delete-versus-index; verify no partial active index, stale resurrection, or duplicate publication.
-- [ ] 10.3 Run generic upload/search/list/detail/file/deletion regressions and the new automated checks, `npm run lint`, `npx tsc --noEmit`, and production build; verify unchanged generic contracts and no source/credential leakage in browser responses or logs.
+- [x] 10.3 Run generic upload/search/list/detail/file/deletion regressions and the new automated checks, `npm run lint`, `npx tsc --noEmit`, and production build; verify unchanged generic contracts and no source/credential leakage in browser responses or logs.
 - [ ] 10.4 Validate OpenSpec strictly, record acceptance evidence and configured limits in implementation documentation, and clean synthetic database/storage artifacts; verify all tracked tasks reflect actual completion without implementing JD-fit or formal RAG evaluations.
 
 ## Workflow follow-up

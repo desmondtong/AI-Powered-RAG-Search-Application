@@ -13,7 +13,6 @@ const ENCRYPTED_PDF_BYTES = Buffer.from(
   "%PDF-1.7\n1 0 obj\n<< /Type /Catalog /Encrypt 2 0 R >>\nendobj\n%%EOF\n",
   "latin1",
 );
-const DOC_BYTES = Buffer.concat([Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]), Buffer.from("doc")]);
 
 interface ZipFixtureEntry {
   name: string;
@@ -120,7 +119,7 @@ function assertValidationError(action: () => unknown, code: ExperienceValidation
 }
 
 describe("experience source file validation", () => {
-  it("accepts supported PDF, DOCX, and legacy DOC containers", () => {
+  it("accepts supported PDF and DOCX containers", () => {
     const pdf = validateExperienceSourceFile({
       bytes: PDF_BYTES,
       fileName: "experience.pdf",
@@ -131,18 +130,11 @@ describe("experience source file validation", () => {
       fileName: "experience.docx",
       fileType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     });
-    const doc = validateExperienceSourceFile({
-      bytes: DOC_BYTES,
-      fileName: "experience.doc",
-      fileType: "application/msword",
-    });
 
     assert.equal(pdf.kind, "pdf");
     assert.equal(pdf.expandedBytes, null);
     assert.equal(docx.kind, "docx");
     assert.equal(docx.expandedBytes, 80);
-    assert.equal(doc.kind, "doc");
-    assert.equal(doc.expandedBytes, null);
   });
 
   it("rejects empty, unsupported, mislabeled, and MIME-conflicting uploads", () => {
@@ -152,6 +144,10 @@ describe("experience source file validation", () => {
     );
     assertValidationError(
       () => validateExperienceSourceFile({ bytes: Buffer.from("text"), fileName: "experience.txt", fileType: "text/plain" }),
+      "unsupported-extension",
+    );
+    assertValidationError(
+      () => validateExperienceSourceFile({ bytes: Buffer.from("doc"), fileName: "experience.doc", fileType: "application/msword" }),
       "unsupported-extension",
     );
     assertValidationError(

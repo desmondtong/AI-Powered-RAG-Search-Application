@@ -75,10 +75,10 @@
 
 ## 10. Cross-workflow acceptance
 
-- [ ] 10.1 Run the complete DOCX and selectable-PDF upload-to-approved-index flow using synthetic experience documents; verify source passages, logical IDs, private file access, multi-project parents, exact children, and approved search results agree.
+- [x] 10.1 Run the complete DOCX and selectable-PDF upload-to-approved-index flow using synthetic experience documents; verify source passages, logical IDs, private file access, multi-project parents, exact children, and approved search results agree.
 - [x] 10.2 Exercise cross-stage failures/concurrency: invalid parse, stale review/approval, expired execution token, interrupted embeddings, failed publication, overlapping approvals, response loss, replacement, and delete-versus-index; verify no partial active index, stale resurrection, or duplicate publication.
 - [x] 10.3 Run generic upload/search/list/detail/file/deletion regressions and the new automated checks, `npm run lint`, `npx tsc --noEmit`, and production build; verify unchanged generic contracts and no source/credential leakage in browser responses or logs.
-- [ ] 10.4 Validate OpenSpec strictly, record acceptance evidence and configured limits in implementation documentation, and clean synthetic database/storage artifacts; verify all tracked tasks reflect actual completion without implementing JD-fit or formal RAG evaluations.
+- [x] 10.4 Validate OpenSpec strictly, record acceptance evidence and configured limits in implementation documentation, and clean synthetic database/storage artifacts; verify all tracked tasks reflect actual completion without implementing JD-fit or formal RAG evaluations.
 
 ## Workflow follow-up
 

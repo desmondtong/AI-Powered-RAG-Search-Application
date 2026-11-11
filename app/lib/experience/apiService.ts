@@ -991,6 +991,7 @@ export async function indexExperienceRevision(
       snapshot,
       revision: approvedRevision,
       client: supabase as unknown as ExperienceEmbeddingPreparationClient,
+      executionToken: lease.execution_token,
       batchSize: options.batchSize ?? EXPERIENCE_EMBEDDING_PREPARATION_BATCH_SIZE,
       maxDurationMs: options.maxDurationMs ?? EXPERIENCE_EMBEDDING_PREPARATION_TIMEOUT_MS,
       embed: options.embed,
@@ -1030,6 +1031,7 @@ export async function indexExperienceRevision(
       p_embedding_model: preparation.frozen_plan.preparation_config.embedding_model,
       p_embedding_task_type: preparation.frozen_plan.preparation_config.embedding_task_type,
       p_embedding_dimensions: preparation.frozen_plan.preparation_config.embedding_dimensions,
+      p_execution_token: lease.execution_token,
     });
     if (error) {
       const failure = {
@@ -1046,7 +1048,7 @@ export async function indexExperienceRevision(
       );
     }
 
-    await completeIndexingExecution(sourceId, lease.execution_token, "indexed", supabase);
+    // Publication consumes the lease in the same transaction as the active switch.
     const publication = (firstRow<Record<string, unknown>>(data) ?? (data as Record<string, unknown> | null)) || {
       status: "indexed",
       already_published: false,

@@ -13,9 +13,9 @@ import {
   type FrozenExperienceIndexPlan,
 } from "./parentPlanning";
 
-export const EXPERIENCE_EMBEDDING_PREPARATION_BATCH_SIZE = readPositiveInt(
-  "EXPERIENCE_EMBEDDING_PREPARATION_BATCH_SIZE",
+export const EXPERIENCE_EMBEDDING_PREPARATION_BATCH_SIZE = Math.min(
   3,
+  readPositiveInt("EXPERIENCE_EMBEDDING_PREPARATION_BATCH_SIZE", 3),
 );
 export const EXPERIENCE_EMBEDDING_PREPARATION_TIMEOUT_MS = readPositiveInt(
   "EXPERIENCE_EMBEDDING_PREPARATION_TIMEOUT_MS",
@@ -34,14 +34,16 @@ interface ExperienceIndexStagingQuery {
   select(columns: string): {
     eq(column: string, value: string): StagingQueryResult;
   };
-  upsert(
-    rows: ExperienceIndexStagingRow[],
-    options?: { onConflict: string },
-  ): StagingQueryResult;
 }
 
 export interface ExperienceEmbeddingPreparationClient {
   from(table: "experience_index_staging"): ExperienceIndexStagingQuery;
+  rpc(functionName: "stage_experience_embeddings", args: {
+    p_source_id: string;
+    p_revision_id: string;
+    p_execution_token: string;
+    p_rows: ExperienceIndexStagingRow[];
+  }): PromiseLike<{ data: unknown; error: SupabaseErrorLike | null }>;
 }
 
 export interface ExperienceIndexStagingRow {
@@ -65,6 +67,7 @@ export interface PrepareExperienceEmbeddingBatchInput {
   snapshot: unknown;
   revision: unknown;
   client: ExperienceEmbeddingPreparationClient;
+  executionToken: string;
   batchSize?: number;
   maxDurationMs?: number;
   embed?: (input: string, taskType: typeof EXPERIENCE_EMBEDDING_TASK_TYPE) => Promise<number[]>;
@@ -188,6 +191,9 @@ export async function prepareExperienceEmbeddingBatch(
 ): Promise<PreparedExperienceEmbeddingBatch> {
   const snapshot: ExtractionSnapshot = parseExtractionSnapshot(input.snapshot);
   const revision: CanonicalExperienceRevision = parseCanonicalExperienceRevision(input.revision);
+  if (!input.executionToken) {
+    throw new Error("Embedding preparation requires an indexing execution token.");
+  }
   const batchSize = normalizeBatchSize(input.batchSize);
   const maxDurationMs = input.maxDurationMs ?? EXPERIENCE_EMBEDDING_PREPARATION_TIMEOUT_MS;
   if (!Number.isInteger(maxDurationMs) || maxDurationMs < 1) {
@@ -252,9 +258,13 @@ export async function prepareExperienceEmbeddingBatch(
   }
 
   if (preparedRows.length > 0) {
-    const { error: upsertError } = await input.client
-      .from("experience_index_staging")
-      .upsert(preparedRows, { onConflict: "revision_id,logical_chunk_key" });
+    ensureWithinDeadline(startedAt, maxDurationMs);
+    const { error: upsertError } = await input.client.rpc("stage_experience_embeddings", {
+      p_source_id: frozenPlan.source_id,
+      p_revision_id: frozenPlan.revision_id,
+      p_execution_token: input.executionToken,
+      p_rows: preparedRows,
+    });
     if (upsertError) {
       throw new Error(`Failed to write embedding staging checkpoints: ${upsertError.message ?? "unknown error"}`);
     }

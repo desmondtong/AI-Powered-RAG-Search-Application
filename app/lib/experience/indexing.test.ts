@@ -178,6 +178,13 @@ class MockIndexingClient {
   }
 
   async rpc(functionName: string, args: Record<string, unknown>) {
+    if (functionName === "stage_experience_embeddings") {
+      if (args.p_execution_token !== this.source.execution_token) {
+        return { data: null, error: { code: "40001", message: "stale token" } };
+      }
+      assert.equal(args.p_source_id, this.source.id);
+      return new MockStagingBuilder(this.stagingRows, this).upsert(args.p_rows as Record<string, unknown>[]);
+    }
     if (functionName === "acquire_experience_source_execution") {
       this.acquireCalls += 1;
       if (this.source.execution_token) {
@@ -214,9 +221,15 @@ class MockIndexingClient {
 
     if (functionName === "publish_experience_revision") {
       this.publishCalls.push(args);
+      if (args.p_execution_token !== this.source.execution_token) {
+        return { data: null, error: { code: "40001", message: "stale token" } };
+      }
       this.revisionRow.status = "indexed";
       this.source.status = "indexed";
       this.source.active_revision_id = args.p_revision_id;
+      this.source.execution_token = null;
+      this.source.execution_stage = null;
+      this.source.execution_token_expires_at = null;
       this.previousLiveParents.length = 0;
       this.stagingRows.length = 0;
       return {
@@ -299,6 +312,8 @@ describe("experience indexing", () => {
     assert.equal(result.progress.prepared_chunks, 3);
     assert.equal(result.progress.remaining_chunks, 0);
     assert.equal(client.publishCalls.length, 1);
+    assert.equal(client.publishCalls[0].p_execution_token, "30000000-0000-4000-8000-000000000001");
+    assert.equal(client.source.execution_token, null);
     assert.equal(client.stagingRows.length, 0);
     assert.equal(client.source.active_revision_id, client.revision.revision.revision_id);
     assert.deepEqual(client.previousLiveParents, []);
@@ -359,5 +374,28 @@ describe("experience indexing", () => {
       (error) => error instanceof ExperienceApiError && error.code === "index-candidate-stale" && error.status === 409,
     );
     assert.equal(client.acquireCalls, 0);
+  });
+
+  it("cannot write or publish after a newer request replaces the indexing token", async () => {
+    const client = new MockIndexingClient();
+    await assert.rejects(
+      () => indexExperienceRevision(
+        String(client.source.id),
+        {},
+        client as unknown as ExperienceServiceClient,
+        {
+          batchSize: 1,
+          embed: async () => {
+            client.source.execution_token = "newer-token";
+            return vector(0.5);
+          },
+        },
+      ),
+      /stale token/,
+    );
+    assert.equal(client.stagingRows.length, 0);
+    assert.equal(client.publishCalls.length, 0);
+    assert.equal(client.source.active_revision_id, "previous-revision");
+    assert.equal(client.source.execution_token, "newer-token");
   });
 });

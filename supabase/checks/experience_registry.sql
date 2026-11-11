@@ -38,6 +38,7 @@ DECLARE
   reconciled_source public.experience_sources%ROWTYPE;
   execution_a record;
   execution_b record;
+  publication_token uuid;
   execution_extraction uuid := gen_random_uuid();
   execution_revision uuid := gen_random_uuid();
   updated_revision public.experience_revisions%ROWTYPE;
@@ -121,7 +122,7 @@ BEGIN
      OR has_function_privilege('authenticated', 'public.reconcile_experience_source_storage(uuid,text,text,text)', 'EXECUTE')
      OR has_function_privilege('anon', 'public.acquire_experience_source_execution(uuid,text,integer)', 'EXECUTE')
      OR has_function_privilege('authenticated', 'public.update_experience_revision_draft(uuid,integer,jsonb)', 'EXECUTE')
-     OR has_function_privilege('anon', 'public.publish_experience_revision(uuid,uuid,text,text,integer,integer,text,text,text,integer)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.publish_experience_revision(uuid,uuid,text,text,integer,integer,text,text,text,integer,uuid)', 'EXECUTE')
      OR has_function_privilege('authenticated', 'public.delete_experience_source(uuid)', 'EXECUTE')
      OR has_function_privilege('authenticated', 'public.match_approved_experience_chunks(vector,double precision,integer,uuid[])', 'EXECUTE') THEN
     RAISE EXCEPTION 'Experience source registry RPCs are exposed to browser roles';
@@ -132,7 +133,7 @@ BEGIN
      OR NOT has_function_privilege('service_role', 'public.acquire_experience_source_execution(uuid,text,integer)', 'EXECUTE')
      OR NOT has_function_privilege('service_role', 'public.complete_experience_source_execution(uuid,uuid,text,text,uuid,uuid,jsonb)', 'EXECUTE')
      OR NOT has_function_privilege('service_role', 'public.update_experience_revision_draft(uuid,integer,jsonb)', 'EXECUTE')
-     OR NOT has_function_privilege('service_role', 'public.publish_experience_revision(uuid,uuid,text,text,integer,integer,text,text,text,integer)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.publish_experience_revision(uuid,uuid,text,text,integer,integer,text,text,text,integer,uuid)', 'EXECUTE')
      OR NOT has_function_privilege('service_role', 'public.delete_experience_source(uuid)', 'EXECUTE')
      OR NOT has_function_privilege('service_role', 'public.match_approved_experience_chunks(vector,double precision,integer,uuid[])', 'EXECUTE') THEN
     RAISE EXCEPTION 'Service role is missing experience source registry RPC privileges';
@@ -514,6 +515,8 @@ BEGIN
     query_vector, now()
   );
 
+  SELECT execution_token INTO publication_token
+  FROM public.acquire_experience_source_execution(publish_source, 'indexing', 300);
   rejected := false;
   BEGIN
     PERFORM public.publish_experience_revision(
@@ -526,7 +529,7 @@ BEGIN
       'publish-chunking-v1',
       'gemini-embedding-001',
       'RETRIEVAL_DOCUMENT',
-      1536
+      1536, publication_token
     );
   EXCEPTION WHEN serialization_failure OR raise_exception THEN
     rejected := true;
@@ -547,7 +550,7 @@ BEGIN
       'publish-chunking-v1',
       'different-embedding-model',
       'RETRIEVAL_DOCUMENT',
-      1536
+      1536, publication_token
     );
   EXCEPTION WHEN serialization_failure OR raise_exception THEN
     rejected := true;
@@ -573,7 +576,7 @@ BEGIN
       'publish-chunking-v1',
       'gemini-embedding-001',
       'RETRIEVAL_DOCUMENT',
-      1536
+      1536, publication_token
     );
   EXCEPTION WHEN serialization_failure THEN
     rejected := true;
@@ -599,7 +602,7 @@ BEGIN
       'publish-chunking-v1',
       'gemini-embedding-001',
       'RETRIEVAL_DOCUMENT',
-      1536
+      1536, publication_token
     );
   EXCEPTION WHEN check_violation OR not_null_violation OR raise_exception THEN
     rejected := true;
@@ -660,7 +663,7 @@ BEGIN
     'publish-chunking-v1',
     'gemini-embedding-001',
     'RETRIEVAL_DOCUMENT',
-    1536
+    1536, publication_token
   ) INTO publish_result;
 
   IF publish_result->>'status' <> 'indexed'
@@ -703,6 +706,8 @@ BEGIN
     RAISE EXCEPTION 'Publication RPC did not clear compatible staging rows';
   END IF;
 
+  SELECT execution_token INTO publication_token
+  FROM public.acquire_experience_source_execution(publish_source, 'indexing', 300);
   SELECT public.publish_experience_revision(
     publish_source,
     publish_revision,
@@ -713,7 +718,7 @@ BEGIN
     'publish-chunking-v1',
     'gemini-embedding-001',
     'RETRIEVAL_DOCUMENT',
-    1536
+    1536, publication_token
   ) INTO publish_result;
 
   IF publish_result->>'already_published' <> 'true'
@@ -729,6 +734,8 @@ BEGIN
     RAISE EXCEPTION 'Idempotent publication retry duplicated active parent rows';
   END IF;
 
+  SELECT execution_token INTO publication_token
+  FROM public.acquire_experience_source_execution(publish_source, 'indexing', 300);
   rejected := false;
   BEGIN
     PERFORM public.publish_experience_revision(
@@ -741,7 +748,7 @@ BEGIN
       'publish-chunking-v1',
       'gemini-embedding-001',
       'RETRIEVAL_DOCUMENT',
-      1536
+      1536, publication_token
     );
   EXCEPTION WHEN serialization_failure THEN
     rejected := true;
@@ -762,7 +769,7 @@ BEGIN
       'publish-chunking-v1',
       'gemini-embedding-001',
       'RETRIEVAL_DOCUMENT',
-      1536
+      1536, publication_token
     );
   EXCEPTION WHEN serialization_failure THEN
     rejected := true;
@@ -967,7 +974,7 @@ BEGIN
       'publish-chunking-v1',
       'gemini-embedding-001',
       'RETRIEVAL_DOCUMENT',
-      1536
+      1536, publication_token
     );
   EXCEPTION WHEN serialization_failure THEN
     rejected := true;

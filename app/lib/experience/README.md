@@ -112,6 +112,7 @@ Apply the additive Supabase migrations in order after the foundation evidence-in
 10. `20261029070512_publish_experience_revision.sql`
 11. `20261029071906_approved_experience_search.sql`
 12. `20261029082531_delete_experience_source.sql`
+13. `20261029100522_experience_index_execution_fencing.sql`
 
 The experience migrations add registry, snapshot, revision, publication-mapping, staging, private storage, and execution-lease state. They do not change the generic `documents` table, the generic `documents` storage bucket, the generic upload/search routes, or the existing foundation RPC signatures.
 
@@ -127,13 +128,15 @@ Stage completion uses `complete_experience_source_execution(...)` and succeeds o
 
 ## Indexing Checkpoints And Publication
 
-Indexing is restartable but publication is all-or-nothing. Each `POST /api/experiences/[id]/index` call acquires an `indexing` execution lease, freezes the approved parent/child plan, prepares at most the configured embedding batch, and upserts compatible rows into `experience_index_staging`. Staging rows are reusable only when the revision ID, plan hash, approved content hash, chunking version, embedding model, task type, and 1536-dimensional embedding configuration all match the frozen plan.
+Indexing is restartable but publication is all-or-nothing. Each `POST /api/experiences/[id]/index` call acquires an `indexing` execution lease, freezes the approved parent/child plan, prepares at most three embeddings, and writes compatible rows through `stage_experience_embeddings(source_id, revision_id, execution_token, rows)`. This RPC locks the source and revision and rejects expired/replaced tokens, deleted sources, stale candidates, and incompatible configurations before writing. Staging rows are reusable only when the revision ID, plan hash, approved content hash, chunking version, embedding model, task type, and 1536-dimensional embedding configuration all match the frozen plan.
 
 When staging is incomplete, the endpoint completes the lease with source status `indexing` and returns progress plus `next_action: "index"`; it does not update `active_revision_id` or remove prior live parents. A retry after interruption recomputes the frozen plan, restores compatible checkpoints, and prepares only missing chunks. Failed preparation records a recoverable `indexing` failure and leaves prior active evidence unchanged.
 
 When all expected staging rows are prepared, `publish_experience_revision(...)` locks the source first and then the target revision. The RPC rejects deleted sources, stale approved candidates, altered approved content hashes, mismatched staging counts/configuration, missing/invalid child payloads, and attempts by older approved revisions to replace a newer candidate. It calls the existing `insert_project_evidence` RPC once per prepared parent inside the same transaction, writes `experience_revision_parents`, verifies the expected parent/child counts, deletes the previous active revision's mapped parents and cascading children, updates `active_revision_id`, and clears staging. Any raised error rolls back new parents, children, mappings, source updates, and staging cleanup, so the previous active revision remains visible.
 
 Publication retries are idempotent only for the current latest-approved active revision and only when the stored mappings still match the requested plan, hash, configuration, and expected counts. A valid retry returns `already_published: true` without inserting duplicate parents or reactivating superseded revisions.
+
+Publication requires `p_execution_token` as its final RPC argument. Missing, expired, or replaced tokens are rejected under the source-then-revision lock before publication. A successful publication or direct idempotent RPC retry consumes the lease atomically; the application must not issue a separate completion write afterward. The old tokenless publication overload was removed. Apply the fencing migration and updated application together.
 
 ## Experience API Contract
 
@@ -213,11 +216,14 @@ Then run the database smoke checks against the intended Supabase database:
 ```bash
 supabase/checks/experience_registry.sql
 supabase/checks/evidence_index.sql
+supabase/checks/experience_index_fencing.sql
 ```
 
 `experience_registry.sql` rolls back all seeded data and verifies registry tables, RLS/grants, private bucket configuration, source reservation/retry behavior, execution-token conflicts, stale-token rejection, optimistic draft saves, pointer invariants, immutable frozen content, multi-parent publication, active replacement, idempotent retries, stale publication rejection, approved-search lineage, and forced rollback of invalid publication payloads. `evidence_index.sql` verifies the generic foundation remains searchable/deletable and server-only. Run Supabase advisors after schema changes; existing foundation warnings should be reviewed separately from experience-ingestion warnings.
 
 The current `@supabase/supabase-js` version expects Node 22+ for native WebSocket support in direct Node scripts. Use the project runtime's supported Node version, or provide the documented Supabase realtime transport option before running live storage smoke scripts under older Node.
+
+`experience_index_fencing.sql` runs as `service_role` and rolls back its synthetic rows. It verifies rejection of expired/replaced tokens, current-token staging and publication, tokenless-publication rejection, and atomic lease consumption on publication/retry. Remote deployment and verification on 2026-10-29 are recorded in [supabase-remote-alignment.md](../../../supabase-remote-alignment.md), including the pre-existing migration-history mismatch that must be reconciled before CLI push/pull.
 
 ## Acceptance Evidence
 
@@ -231,9 +237,11 @@ npm run build
 openspec validate add-structured-project-ingestion --type change --strict --json
 ```
 
-`npm run test:experience` passes without LibreOffice because legacy DOC conversion is out of scope for v1. Poppler `pdftotext` is optional; selectable PDFs use the `pdf2json` fallback when Poppler is unavailable. No `GEMINI_API_KEY` or `GOOGLE_API_KEY` is present in the current shell, so the opt-in live Gemini parsing smoke and a complete DOCX/PDF upload-to-approved-index acceptance run are not yet complete.
+`npm run test:experience` passes without LibreOffice because legacy DOC conversion is out of scope for v1. Poppler `pdftotext` is optional; selectable PDFs use the `pdf2json` fallback when Poppler is unavailable.
 
-Do not mark cross-workflow acceptance complete until the live-key smoke is supplied and the full DOCX and selectable-PDF upload-to-approved-index flow passes. No JD-fit generation or formal RAG quality evaluation is part of this change.
+The scoped suite includes `crossWorkflowAcceptance.test.ts`, which runs a synthetic DOCX and selectable-PDF source through upload, private source retention, extraction, deterministic model-style parsing via `generateValidatedStructuredExperienceDraft()`, review save, approval, repeated indexing until publication, retained export, private original download, and approved-search retrieval. The DOCX fixture verifies two separate project parents, persisted logical experience/evidence/chunk IDs, exact child source spans, and selected-source approved search returning the expected retained child and parent lineage. The PDF fixture verifies the same upload-to-approved-index lifecycle for selectable PDF text.
+
+Synthetic database rows and private storage objects in this acceptance run are in-memory test artifacts and are discarded when the test process exits; no remote Supabase project or local persistent database is mutated. No JD-fit generation or formal RAG quality evaluation is part of this change.
 
 ## Synthetic Parsing Smoke
 

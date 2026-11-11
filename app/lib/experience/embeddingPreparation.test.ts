@@ -59,12 +59,29 @@ class MockStagingQuery {
 
 class MockStagingClient {
   readonly upsertCalls: ExperienceIndexStagingRow[][] = [];
+  readonly token = "30000000-0000-4000-8000-000000000001";
+  rejectWrites = false;
 
   constructor(readonly rows: ExperienceIndexStagingRow[] = []) {}
 
   from(table: string) {
     assert.equal(table, "experience_index_staging");
     return new MockStagingQuery(this);
+  }
+
+  async rpc(functionName: string, args: {
+    p_source_id: string;
+    p_revision_id: string;
+    p_execution_token: string;
+    p_rows: ExperienceIndexStagingRow[];
+  }) {
+    assert.equal(functionName, "stage_experience_embeddings");
+    assert.equal(args.p_execution_token, this.token);
+    assert.ok(args.p_rows.every((row) => row.revision_id === args.p_revision_id));
+    if (this.rejectWrites) {
+      return { data: null, error: { message: "stale or expired indexing token" } };
+    }
+    return new MockStagingQuery(this).upsert(args.p_rows);
   }
 }
 
@@ -130,6 +147,7 @@ describe("experience embedding preparation", () => {
       snapshot,
       revision,
       client,
+      executionToken: client.token,
       batchSize: 2,
       embed: async (input, taskType) => {
         assert.equal(taskType, "RETRIEVAL_DOCUMENT");
@@ -164,6 +182,7 @@ describe("experience embedding preparation", () => {
       snapshot,
       revision,
       client,
+      executionToken: client.token,
       batchSize: 3,
       embed: async () => vector(0.75),
       now: () => new Date("2026-10-29T02:00:00.000Z"),
@@ -190,6 +209,7 @@ describe("experience embedding preparation", () => {
           snapshot,
           revision,
           client,
+          executionToken: client.token,
           embed: async () => vector(0.1),
         }),
       /incompatible with the frozen plan/,
@@ -207,11 +227,33 @@ describe("experience embedding preparation", () => {
           snapshot,
           revision,
           client,
+          executionToken: client.token,
           batchSize: 1,
           embed: async () => [1, 2, 3],
         }),
       /invalid dimensions: 3\/1536/,
     );
+    assert.equal(client.upsertCalls.length, 0);
+  });
+
+  it("does not persist vectors when the database rejects an expired or replaced token", async () => {
+    const { snapshot, revision } = approvedFixture();
+    const client = new MockStagingClient();
+    await assert.rejects(
+      () => prepareExperienceEmbeddingBatch({
+        snapshot,
+        revision,
+        client,
+        executionToken: client.token,
+        batchSize: 1,
+        embed: async () => {
+          client.rejectWrites = true;
+          return vector(0.5);
+        },
+      }),
+      /stale or expired indexing token/,
+    );
+    assert.equal(client.rows.length, 0);
     assert.equal(client.upsertCalls.length, 0);
   });
 });

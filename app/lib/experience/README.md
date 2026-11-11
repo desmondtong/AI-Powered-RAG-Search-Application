@@ -37,12 +37,16 @@ Structured parsing uses [structuredGeneration.ts](./structuredGeneration.ts), no
 | Setting | Default |
 | --- | --- |
 | Model | `EXPERIENCE_STRUCTURED_MODEL`, else `GEMINI_GENERATION_MODEL`, else `gemini-flash-lite-latest` |
-| Prompt version | `experience-structured-extraction-v1` |
+| Prompt version | `experience-structured-extraction-v2` |
 | Request timeout | `EXPERIENCE_STRUCTURED_TIMEOUT_MS`, default 120 seconds |
 | Max output tokens | `EXPERIENCE_STRUCTURED_MAX_OUTPUT_TOKENS`, default 16,384 |
 | Response MIME | `application/json` |
 
 Source blocks are passed to the model as JSON-delimited data. Source text can contain markdown, XML-looking tags, JSON, or prompt-like instructions; the prompt treats `source_blocks[].text` as inert data and asks for exact quotes copied from retained blocks. Named projects should become separate `project` experiences; role responsibilities without a named project should become `general-experience`. Unknown scalar facts stay `null`, unknown collections stay empty arrays, team outcomes remain team-attributed, planned work remains planned, and qualified metrics such as "about 30%" remain qualified.
+
+The prompt requests at most 16 experiences and 80 evidence items in total, and the local proposal validator enforces both limits before building a draft. The provider response schema intentionally omits the nested `maxItems` constraints: live verification on 2026-11-11 reproduced HTTP 400 `INVALID_ARGUMENT` with those constraints and succeeded after removing only those two fields. JSON structure, required fields, enums, and source-quote requirements remain enforced; oversized output is rejected, never silently truncated.
+
+The compatibility fix was verified with five new schema/boundary cases (128 tests passing overall), lint, TypeScript, and a live synthetic two-project parse using `gemini-flash-lite-latest`. The live parse completed with `STOP`, produced separate Atlas and Beacon projects, and passed local source-quote validation without repair. No user document was read or submitted by that check, and no database or Storage records were changed. This is provider integration evidence, not full browser-to-database workflow acceptance; the earlier retry-policy report remains unchanged.
 
 The model proposes `{ block_id, quote }` references. Application validation resolves those quotes into canonical `{ block_id, start, end }` spans only when the quote is an exact unique occurrence in the declared retained block. It rejects cross-source references, cross-snapshot references, unknown blocks, repeated quotes, nonmatching quotes, unsupported enum values, malformed JSON, blocked responses, truncated output, empty output, and exhausted repair. Validation proves only structure, ownership, span bounds, and allowed values; it does not prove semantic truth. Human review must still compare the draft against source passages before approval.
 
@@ -98,7 +102,7 @@ Before embedding preparation, `freezeApprovedExperienceIndexPlan()` validates th
 
 ## Database And Storage Setup
 
-Apply the additive Supabase migrations in order after the foundation evidence-index migrations:
+The original deployment order is listed below for traceability. These migrations already exist on remote project `lwljmmfcvmbnrfstltzj`; do not replay them. The retry-policy follow-up leaves the local database untouched and does not authorize `supabase db push`, schema deployment, or migration-history repair. Any future database work requires separate authorization and explicit remote-target confirmation.
 
 1. `20261028000100_evidence_tables.sql`
 2. `20261028000200_evidence_search.sql`
@@ -124,19 +128,21 @@ All new registry tables have RLS enabled and no browser-role grants. The storage
 
 Long-running stages acquire a source execution token with `acquire_experience_source_execution(source_id, stage, lease_seconds)`. Supported stages are `extracting`, `parsing`, and `indexing`; leases are finite and currently bounded to 1-3600 seconds. A competing request conflicts while an unexpired token exists. A later request can acquire a new token only after expiry.
 
-Stage completion uses `complete_experience_source_execution(...)` and succeeds only when the supplied token, stage, and unexpired lease still match the source row. This prevents an expired request from overwriting work completed under a newer token. Draft edits use `update_experience_revision_draft(revision_id, expected_draft_version, draft_json)`, which increments `draft_version` and rejects stale saves.
+Extraction/parsing completion uses `complete_experience_source_execution(...)` and succeeds only when the supplied token, stage, and unexpired lease still match the source row. Indexing checkpoint/failure completion additionally compares candidate, active, and draft pointers, indexing status, expiry, and the nondeleted state in one conditional update. Its `gt.now` timestamp filter uses PostgreSQL transaction time, not the application clock. If approval, deletion, or another execution changes these values, cleanup leaves the newer state untouched and the original failure remains visible. Publication consumes its lease inside its own RPC and needs no later completion write. Draft edits use `update_experience_revision_draft(revision_id, expected_draft_version, draft_json)`, which increments `draft_version` and rejects stale saves.
 
 ## Indexing Checkpoints And Publication
 
-Indexing is restartable but publication is all-or-nothing. Each `POST /api/experiences/[id]/index` call acquires an `indexing` execution lease, freezes the approved parent/child plan, prepares at most three embeddings, and writes compatible rows through `stage_experience_embeddings(source_id, revision_id, execution_token, rows)`. This RPC locks the source and revision and rejects expired/replaced tokens, deleted sources, stale candidates, and incompatible configurations before writing. Staging rows are reusable only when the revision ID, plan hash, approved content hash, chunking version, embedding model, task type, and 1536-dimensional embedding configuration all match the frozen plan.
+Indexing is restartable but publication is all-or-nothing. Each eligible `POST /api/experiences/[id]/index` call freezes the approved parent/child plan and acquires an `indexing` execution lease. New publication prepares at most three embeddings within a default 75-second preparation deadline and writes compatible rows through `stage_experience_embeddings(source_id, revision_id, execution_token, rows)`. Configure these bounds with `EXPERIENCE_EMBEDDING_PREPARATION_BATCH_SIZE` (capped at three) and `EXPERIENCE_EMBEDDING_PREPARATION_TIMEOUT_MS`. This RPC locks the source and revision and rejects expired/replaced tokens, deleted sources, stale candidates, and incompatible configurations before writing. Staging rows are reusable only when the revision ID, plan hash, approved content hash, chunking version, embedding model, task type, and 1536-dimensional embedding configuration all match the frozen plan.
 
 When staging is incomplete, the endpoint completes the lease with source status `indexing` and returns progress plus `next_action: "index"`; it does not update `active_revision_id` or remove prior live parents. A retry after interruption recomputes the frozen plan, restores compatible checkpoints, and prepares only missing chunks. Failed preparation records a recoverable `indexing` failure and leaves prior active evidence unchanged.
 
 When all expected staging rows are prepared, `publish_experience_revision(...)` locks the source first and then the target revision. The RPC rejects deleted sources, stale approved candidates, altered approved content hashes, mismatched staging counts/configuration, missing/invalid child payloads, and attempts by older approved revisions to replace a newer candidate. It calls the existing `insert_project_evidence` RPC once per prepared parent inside the same transaction, writes `experience_revision_parents`, verifies the expected parent/child counts, deletes the previous active revision's mapped parents and cascading children, updates `active_revision_id`, and clears staging. Any raised error rolls back new parents, children, mappings, source updates, and staging cleanup, so the previous active revision remains visible.
 
-Publication retries are idempotent only for the current latest-approved active revision and only when the stored mappings still match the requested plan, hash, configuration, and expected counts. A valid retry returns `already_published: true` without inserting duplicate parents or reactivating superseded revisions.
+Publication retries are idempotent only for the current latest-approved active revision and only when the stored mappings still match the requested plan, hash, configuration, and expected counts. The API acquires a fresh lease and calls the publication RPC even for this retry; it skips embedding preparation and does not require cleared staging. A valid retry returns `already_published: true` without inserting duplicate parents or reactivating superseded revisions. The validated `publication` response includes `status`, `already_published`, `revision_id`, `active_revision_id`, `parent_count`, `child_count`, and `plan_hash`; completed progress has zero remaining/new chunks and `next_action: null`. Missing or invalid RPC data is never fabricated into success.
 
-Publication requires `p_execution_token` as its final RPC argument. Missing, expired, or replaced tokens are rejected under the source-then-revision lock before publication. A successful publication or direct idempotent RPC retry consumes the lease atomically; the application must not issue a separate completion write afterward. The old tokenless publication overload was removed. Apply the fencing migration and updated application together.
+An older revision is rejected after either newer approval or newer publication, even if it previously published. Retained approval history remains exportable but does not authorize republication. No historical publication receipts are introduced. The previous active index remains searchable until atomic replacement succeeds.
+
+Publication requires `p_execution_token` as its final RPC argument. Missing, expired, or replaced tokens are rejected under the source-then-revision lock before publication. A successful publication or direct idempotent RPC retry consumes the lease atomically; the application must not issue a separate completion write afterward. The old tokenless publication overload was removed by the already-deployed fencing migration.
 
 ## Experience API Contract
 
@@ -151,6 +157,7 @@ All experience routes are separate from generic document routes. `POST`, `PATCH`
 | `POST /api/experiences/[id]/parse` | none | `{ status: "draft", revision_id, draft_version, omitted_block_coverage, next_action: "review" }` | Creates a distinct draft revision; does not approve or index. |
 | `PATCH /api/experiences/[id]/draft` | `{ "revision_id": "...", "expected_draft_version": 1, "draft": { ...canonicalRevision } }` | `{ revision_id, draft_version, omitted_block_coverage, next_action: "review" }` | Validates source-backed fields and increments the persisted draft version. |
 | `POST /api/experiences/[id]/approve` | `{ "revision_id": "...", "expected_draft_version": 2 }` | `{ status: "approved", approved_content_hash, next_action: "index" }` | Freezes approved JSON/hash. Approval alone does not publish evidence. |
+| `POST /api/experiences/[id]/index` | `{ "revision_id": "..." }` | `{ status, progress, publication, next_action }` | Targets latest approval only; verified current-active retry also requires a fresh lease. |
 | `POST /api/experiences/[id]/draft-from-approved` | `{ "approved_revision_id": "..." }` or `{}` | `{ revision_id, cloned_from_revision_id, next_action: "review" }` | Creates a separate draft; accepted/indexed revisions remain unchanged. |
 | `GET /api/experiences/[id]/revisions/[revisionId]/export` | none | `StructuredExperienceExportSchema` | Trusted export of approved/indexing/indexed retained JSON, source blocks, content hash, and resolved source refs. |
 | `GET /api/experiences/[id]/file` | none | original bytes with MIME and `Content-Disposition` | Serves the private original through the server boundary only. |
@@ -168,6 +175,8 @@ Later indexing tasks extend `approved -> indexing -> indexed`; approval must not
 
 Recoverable API errors use stable codes. Validation failures use `draft-validation-failed` with `details.field_errors`. Version or stale-candidate conflicts use HTTP `409` codes such as `draft-version-conflict`, `approval-version-conflict`, `approval-candidate-stale`, or `draft-create-conflict`. Missing retained resources use `source-not-found`, `revision-not-found`, `revision-export-unavailable`, or `source-file-unavailable`. Storage cleanup retry state uses `cleanup-pending` plus `source-storage-delete-failed`. Browser trust-boundary failures use `cross-origin-rejected`.
 
+Both early and publication-time outdated indexing requests return HTTP `409`, `index-candidate-stale`, and `details.recoverable_action: "refresh-source"`. Other execution/publication conflicts keep their own classification; SQLSTATE `40001` alone does not mean the candidate is stale. An unconfirmed publication response returns `index-publication-response-invalid` rather than claiming success.
+
 The generic routes `/api/upload`, `/api/documents`, and `/api/search` remain generic. Experience upload, review, approval, retained export, and file serving must call only `/api/experiences...` routes.
 
 ## Browser Workflow And Correction Policy
@@ -179,7 +188,7 @@ Use a small synthetic two-project file for browser workflow checks, for example 
 3. Review each project separately. Edit only supported fields, evidence kind, attribution, activity status, and source spans. Remove incorrect evidence rather than saving unsupported claims.
 4. Acknowledge extraction warnings and unassigned source blocks before saving. Save uses `PATCH /api/experiences/[id]/draft` with the current draft version; validation errors must stay visible and must not approve or index the draft.
 5. Approve only after the source-linked draft is valid. Approval uses `POST /api/experiences/[id]/approve`, freezes the revision, and shows it as ready to index without claiming indexed success.
-6. Index uses repeated `POST /api/experiences/[id]/index` calls. Progress shows embedding preparation until publication completes. A failure keeps the previously active revision visible.
+6. Index uses explicit `POST /api/experiences/[id]/index` actions. Progress shows embedding preparation until publication completes. A failure keeps the previously active revision visible. On HTTP 409, indexing stops and the client refreshes source, approved, and active state without resending or silently retargeting the request. Review the refreshed identities before explicitly selecting Index again. If refresh fails, Index stays disabled until Refresh State succeeds.
 7. Inspect accepted JSON/source references through the retained export route and download the private original through the file route. The Search page still uses `/api/search` and does not run JD-fit or approved-experience retrieval in this change.
 
 Corrections in v1 are source-grounded only. A field or evidence summary may be edited when its retained source spans still support the claim. To add a fact that is absent from the uploaded source, upload a revised source file and parse a new draft. Do not use review edits, acknowledgements, or approval to turn unsupported notes into accepted evidence.
@@ -211,7 +220,7 @@ Runtime defaults are intentionally bounded:
 | Retained source block | 2,000 UTF-16 code units |
 Set `PDFTOTEXT_PATH` when Poppler is installed outside the default lookup path. A missing Poppler binary is not fatal because selectable PDFs can use the `pdf2json` fallback.
 
-Then run the database smoke checks against the intended Supabase database:
+The existing database smoke assets are listed below; these are SQL files, not shell commands. Any future execution requires separate authorization, confirmation of remote project `lwljmmfcvmbnrfstltzj` through Supabase MCP, and rollback-only synthetic fixtures. Do not run them against the local database.
 
 ```bash
 supabase/checks/experience_registry.sql
@@ -227,7 +236,7 @@ The current `@supabase/supabase-js` version expects Node 22+ for native WebSocke
 
 ## Acceptance Evidence
 
-Current verification for `add-structured-project-ingestion` was recorded on 2026-10-29 against this workspace. The following checks passed:
+Original verification for `add-structured-project-ingestion` was recorded on 2026-10-29 against this workspace. The following checks passed:
 
 ```bash
 npm run test:experience
@@ -242,6 +251,14 @@ openspec validate add-structured-project-ingestion --type change --strict --json
 The scoped suite includes `crossWorkflowAcceptance.test.ts`, which runs a synthetic DOCX and selectable-PDF source through upload, private source retention, extraction, deterministic model-style parsing via `generateValidatedStructuredExperienceDraft()`, review save, approval, repeated indexing until publication, retained export, private original download, and approved-search retrieval. The DOCX fixture verifies two separate project parents, persisted logical experience/evidence/chunk IDs, exact child source spans, and selected-source approved search returning the expected retained child and parent lineage. The PDF fixture verifies the same upload-to-approved-index lifecycle for selectable PDF text.
 
 Synthetic database rows and private storage objects in this acceptance run are in-memory test artifacts and are discarded when the test process exits; no remote Supabase project or local persistent database is mutated. No JD-fit generation or formal RAG quality evaluation is part of this change.
+
+### Retry-policy follow-up (2026-11-11)
+
+The [follow-up verification report](../../../supabase-retry-policy-verification-2026-11-11.md) records separately authorized API/UI fixes, 123 passing database-free tests, four passing browser conflict scenarios, lint/type/build results, and remote rollback assertions. The [original remote report](../../../supabase-remote-verification-2026-11-11.md) remains historical evidence: rejection of superseded retries is intentional under the revised policy, not a newly implemented database fix.
+
+Repository SQL checks are `supabase/checks/experience_retry_policy.sql`, `experience_retry_guards.sql`, and `experience_retry_lifecycle.sql`. Their target-confirmed remote runs ended with `ROLLBACK`; all nine persistent database/Storage metadata fingerprints matched the baseline. No migrations or migration-history entries changed.
+
+Browser regressions live in [retryConflicts.browser.mjs](./retryConflicts.browser.mjs). Run against a loopback Next preview with dummy Supabase/Gemini credentials, using `EXPERIENCE_PREVIEW_URL` (default `http://127.0.0.1:3033`) and `PLAYWRIGHT_MODULE_PATH` when Playwright is not installed locally. The script intercepts all APIs and blocks external requests; it verifies one outdated POST and one conflict refresh, explicit retargeting only after user action, and disabled indexing after refresh failure. These fixtures do not exercise the real server or database. Application cleanup is covered by in-memory lifecycle/expiry tests and an isolated PostgREST serialization check, not a new remote API execution.
 
 ## Synthetic Parsing Smoke
 

@@ -13,6 +13,7 @@ The evidence index can store and retrieve project parents and focused child chun
 - Require a source-linked review and correction step before approval. Approval freezes an exact revision; it does not by itself mean indexing succeeded.
 - Build parent context and exact child citation spans from approved source references, while generating embeddings from truthful contextual headers plus those spans.
 - Publish a complete document revision atomically, with bounded resumable embedding preparation, idempotent retries, and safe replacement/deletion behavior.
+- Reject indexing/publication requests whose revision is no longer the latest approved candidate, including previously published revisions. Preserve idempotent publication retries only for the current active revision while it remains the latest approved candidate, with a valid indexing lease and matching publication parameters. Retain approval history without adding historical publication receipts.
 - Provide an ingestion-owned search eligibility boundary for active, approved, indexed revisions, with optional selected-source filtering before top-K retrieval. Keep the existing evidence RPC and generic search API compatible.
 - Establish logical evidence IDs, immutable revision hashes, and model/prompt/parser/chunking versions for downstream citation resolution and reproducible quality evaluations.
 
@@ -40,3 +41,4 @@ Out of scope:
 - Dependencies: a runtime JSON validator. PDF continues to prefer Poppler with `pdf2json` fallback; DOCX continues to use Mammoth.
 - Operations: private Supabase Storage for experience files, server-only service-role access, local/private deployment, explicit input and execution limits, and documented converter installation.
 - Dependency: the implemented `add-evidence-index-data-model` migrations and helpers must be present. No foundation redesign, generic API break, or live database modification occurs during proposal creation.
+- Follow-up implementation and database verification target only remote Supabase project `lwljmmfcvmbnrfstltzj`. The local development database remains untouched. Future SQL changes must be recorded in the repository. Migration-history reconciliation is separate; neither `supabase db push` nor replaying existing migrations is permitted.

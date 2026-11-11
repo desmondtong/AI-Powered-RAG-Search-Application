@@ -6,6 +6,7 @@ import {
   EXPERIENCE_STRUCTURED_PROMPT_VERSION,
   EXPERIENCE_STRUCTURED_RESPONSE_SCHEMA,
   EXPERIENCE_STRUCTURED_TIMEOUT_MS,
+  StructuredExperienceModelProposalSchema,
   StructuredGenerationError,
   buildStructuredExperienceDraft,
   buildStructuredExperiencePrompt,
@@ -106,6 +107,51 @@ function stoppedJsonResponse(value: unknown): MockStructuredResponse {
 }
 
 describe("structured experience generation helper", () => {
+  it("avoids nested provider array bounds while retaining the response structure", () => {
+    const experiences = EXPERIENCE_STRUCTURED_RESPONSE_SCHEMA.properties.experiences;
+    assert.equal("maxItems" in experiences, false);
+    assert.equal("maxItems" in experiences.items.properties.evidence_items, false);
+    assert.equal(experiences.minItems, 1);
+    assert.equal(experiences.items.properties.evidence_items.items.properties.source_refs.minItems, 1);
+  });
+
+  it("accepts the local limit of 16 experiences and 80 total evidence items", () => {
+    const proposal = validParserProposal();
+    const experience = proposal.experiences[0];
+    proposal.experiences = Array.from({ length: 16 }, () => ({
+      ...structuredClone(experience),
+      evidence_items: Array.from({ length: 5 }, () => structuredClone(experience.evidence_items[0])),
+    }));
+    const result = StructuredExperienceModelProposalSchema.parse(proposal);
+    assert.equal(result.experiences.length, 16);
+    assert.equal(result.experiences.reduce((sum, item) => sum + item.evidence_items.length, 0), 80);
+  });
+
+  it("rejects more than 16 experiences locally", () => {
+    const proposal = validParserProposal();
+    proposal.experiences = Array.from({ length: 17 }, () => structuredClone(proposal.experiences[0]));
+    assert.equal(StructuredExperienceModelProposalSchema.safeParse(proposal).success, false);
+  });
+
+  for (const counts of [[81], [40, 41]]) {
+    it(`rejects ${counts.join("+")} evidence items before constructing a draft`, () => {
+      const proposal = validParserProposal();
+      const experience = proposal.experiences[0];
+      proposal.experiences = counts.map((count) => ({
+        ...structuredClone(experience),
+        evidence_items: Array.from({ length: count }, () => structuredClone(experience.evidence_items[0])),
+      }));
+      assert.throws(
+        () => buildStructuredExperienceDraft({
+          snapshot: parserSnapshot(),
+          proposal,
+          revisionId: "oversized-proposal",
+        }),
+        /80 evidence items/,
+      );
+    });
+  }
+
   it("uses dedicated JSON schema, token limit, timeout, and provenance instead of generic answer defaults", async () => {
     const client = new MockStructuredClient({
       text: JSON.stringify({

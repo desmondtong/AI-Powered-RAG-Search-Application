@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Navigation from "../../components/Navigation";
 
 type EvidenceKind = "background" | "responsibility" | "contribution" | "challenge" | "decision" | "outcome";
@@ -223,6 +223,8 @@ export default function ExperienceReviewClient({ sourceId }: { sourceId: string 
   const [runningAction, setRunningAction] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [indexRefreshRequired, setIndexRefreshRequired] = useState(false);
+  const indexRequestInFlight = useRef(false);
 
   const loadDetail = useCallback(async () => {
     try {
@@ -231,16 +233,20 @@ export default function ExperienceReviewClient({ sourceId }: { sourceId: string 
       const response = await fetch(`/api/experiences/${sourceId}`);
       const data = (await response.json()) as ExperienceDetailResponse | { error?: unknown };
       if (!response.ok) {
-        setError(readErrorMessage(data, "Failed to load experience source."));
-        return;
+        throw new Error(readErrorMessage(data, "Failed to load experience source."));
       }
       const typedDetail = data as ExperienceDetailResponse;
       const canonicalDraft = typedDetail.latest_revision?.draft_json?.canonical_revision ?? null;
       setDetail(typedDetail);
       setDraft(canonicalDraft ? cloneDraft(canonicalDraft) : null);
       setFieldErrors([]);
+      setIndexRefreshRequired(false);
+      return null;
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load experience source.");
+      const loadMessage = loadError instanceof Error ? loadError.message : "Failed to load experience source.";
+      setError(loadMessage);
+      setIndexRefreshRequired(true);
+      return loadMessage;
     } finally {
       setLoading(false);
     }
@@ -435,11 +441,13 @@ export default function ExperienceReviewClient({ sourceId }: { sourceId: string 
   };
 
   const indexApprovedRevision = async () => {
-    const revisionId = latestApprovedRevisionId ?? activeRevisionId ?? detail?.latest_revision?.id;
+    if (indexRequestInFlight.current || runningAction || loading || indexRefreshRequired) return;
+    const revisionId = latestApprovedRevisionId;
     if (!revisionId) {
       setError("No approved revision is available for indexing.");
       return;
     }
+    indexRequestInFlight.current = true;
     try {
       setRunningAction("index");
       setMessage(null);
@@ -451,7 +459,19 @@ export default function ExperienceReviewClient({ sourceId }: { sourceId: string 
       });
       const data = await response.json();
       if (!response.ok) {
-        setError(readErrorMessage(data, "Indexing failed."));
+        const indexMessage = readErrorMessage(data, "Indexing failed.");
+        if (response.status === 409) {
+          setIndexRefreshRequired(true);
+          setIndexProgress(null);
+          setAcceptedExport(null);
+          const refreshError = await loadDetail();
+          setError(refreshError
+            ? `${indexMessage} State refresh failed: ${refreshError} Indexing is stopped; refresh successfully before trying again.`
+            : indexMessage);
+          if (!refreshError) setMessage("State refreshed. Review the approved and active revisions, then explicitly select Index to continue.");
+        } else {
+          setError(indexMessage);
+        }
         return;
       }
       setIndexProgress(data.progress ?? null);
@@ -461,6 +481,7 @@ export default function ExperienceReviewClient({ sourceId }: { sourceId: string 
     } catch (indexError) {
       setError(indexError instanceof Error ? indexError.message : "Indexing failed.");
     } finally {
+      indexRequestInFlight.current = false;
       setRunningAction(null);
     }
   };
@@ -616,12 +637,19 @@ export default function ExperienceReviewClient({ sourceId }: { sourceId: string 
                 {canIndex && (
                   <button
                     onClick={indexApprovedRevision}
-                    disabled={runningAction !== null}
+                    disabled={runningAction !== null || loading || indexRefreshRequired || !latestApprovedRevisionId}
                     className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-gray-400"
                   >
                     {runningAction === "index" ? "Indexing..." : "Index"}
                   </button>
                 )}
+                <button
+                  onClick={() => void loadDetail()}
+                  disabled={runningAction !== null || loading}
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium disabled:opacity-50 dark:border-gray-700"
+                >
+                  Refresh State
+                </button>
                 {canCreateDraftFromApproved && (
                   <button
                     onClick={createDraftFromApproved}
@@ -659,6 +687,11 @@ export default function ExperienceReviewClient({ sourceId }: { sourceId: string 
               </div>
             </div>
 
+            {activeRevisionId && activeRevisionId !== latestApprovedRevisionId && (
+              <p className="mt-3 text-sm text-gray-600 dark:text-gray-300">
+                The active revision remains searchable until the approved replacement publishes successfully.
+              </p>
+            )}
             {indexProgress && (
               <div className="mt-4">
                 <div className="mb-1 flex justify-between text-xs text-gray-500 dark:text-gray-400">

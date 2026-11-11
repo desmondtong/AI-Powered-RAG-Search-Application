@@ -133,7 +133,7 @@ type RevisionParentRow = {
 type QueryFilter = {
   key: string;
   value: unknown;
-  kind: "eq" | "is";
+  kind: "eq" | "is" | "gt";
 };
 
 const NOW = "2026-10-29T12:00:00.000Z";
@@ -316,6 +316,11 @@ class SelectBuilder {
     return this;
   }
 
+  gt(key: string, value: unknown) {
+    this.filters.push({ key, value, kind: "gt" });
+    return this;
+  }
+
   order(key: string, options?: { ascending?: boolean }) {
     this.orderKey = key;
     this.orderAscending = options?.ascending ?? true;
@@ -330,6 +335,10 @@ class SelectBuilder {
   resultRows() {
     let rows = this.rows().filter((row) =>
       this.filters.every((filter) => {
+        if (filter.kind === "gt") {
+          const value = filter.value === "now" ? "2099-10-29T12:00:00.000Z" : filter.value;
+          return String(row[filter.key]) > String(value);
+        }
         if (filter.kind === "is") {
           return row[filter.key] === filter.value;
         }
@@ -351,7 +360,7 @@ class SelectBuilder {
   }
 
   then(resolve: (value: { data: Record<string, unknown>[]; error: null }) => void) {
-    return Promise.resolve({ data: this.resultRows(), error: null }).then(resolve);
+    return Promise.resolve({ data: structuredClone(this.resultRows()), error: null }).then(resolve);
   }
 }
 
@@ -572,7 +581,7 @@ class InMemoryExperienceClient implements ApprovedExperienceSearchClient {
     this.tokenCounter += 1;
     source.execution_token = `execution-token-${this.tokenCounter}`;
     source.execution_stage = String(args.p_stage);
-    source.execution_token_expires_at = "2026-10-29T12:05:00.000Z";
+    source.execution_token_expires_at = "2099-10-29T12:05:00.000Z";
     source.status = String(args.p_stage);
     source.updated_at = NOW;
     return {

@@ -368,23 +368,40 @@ async function completeFailedExecution(
 }
 
 async function completeIndexingExecution(
-  sourceId: string,
-  token: string,
-  nextStatus: "indexing" | "indexed" | "approved",
+  source: SourceRow,
+  lease: ExecutionLease,
+  nextStatus: "indexing" | "indexed" | "approved" | "failed",
   client: ExperienceServiceClient,
   failure: Record<string, unknown> | null = null,
 ) {
-  const { error } = await client.rpc("complete_experience_source_execution", {
-    p_source_id: sourceId,
-    p_execution_token: token,
-    p_stage: "indexing",
-    p_next_status: nextStatus,
-    p_latest_extraction_id: null,
-    p_latest_draft_revision_id: null,
-    p_failure: failure,
-  });
-  if (error) {
-    throw new ExperienceApiError("index-completion-failed", errorMessage(error), 409);
+  // Approval can change lifecycle state without replacing an indexing token.
+  // Compare those pointers atomically, not in a read followed by completion.
+  let query = client.from("experience_sources").update({
+    status: nextStatus,
+    failure,
+    execution_token: null,
+    execution_stage: null,
+    execution_token_expires_at: null,
+    execution_started_at: null,
+  })
+    .eq("id", source.id)
+    .eq("execution_token", lease.execution_token)
+    .eq("execution_stage", "indexing")
+    .eq("status", "indexing")
+    .eq("execution_token_expires_at", lease.execution_token_expires_at)
+    // Postgres resolves this timestamp input using database transaction time.
+    .gt("execution_token_expires_at", "now")
+    .is("deleted_at", null);
+  for (const key of ["latest_approved_revision_id", "active_revision_id", "latest_draft_revision_id"] as const) {
+    query = source[key] === null ? query.is(key, null) : query.eq(key, source[key]);
+  }
+  const { data, error } = await query.select("id");
+  if (error || !data?.length) {
+    throw new ExperienceApiError(
+      "index-completion-failed",
+      "Indexing state changed or its lease expired. Refresh the source before continuing.",
+      409,
+    );
   }
 }
 
@@ -933,8 +950,14 @@ export async function indexExperienceRevision(
   if (!revisionId) {
     throw new ExperienceApiError("approved-revision-required", "An approved experience revision is required before indexing.", 409);
   }
-  if (source.latest_approved_revision_id && source.latest_approved_revision_id !== revisionId) {
-    throw new ExperienceApiError("index-candidate-stale", "Indexing must target the latest approved revision for this source.", 409);
+  const staleCandidate = () => new ExperienceApiError(
+    "index-candidate-stale",
+    "This indexing request is outdated. Refresh and review the latest approved revision before indexing again.",
+    409,
+    { recoverable_action: "refresh-source" },
+  );
+  if (source.latest_approved_revision_id !== revisionId) {
+    throw staleCandidate();
   }
 
   const revisionRow = await getRevisionRow(revisionId, sourceId, supabase);
@@ -960,55 +983,43 @@ export async function indexExperienceRevision(
     preparation_config: frozenPlan.preparation_config,
   };
 
-  if (source.active_revision_id === revisionId && revisionRow.status === "indexed") {
-    return {
-      source_id: sourceId,
-      revision_id: revisionId,
-      status: "indexed",
-      already_published: true,
-      progress: {
-        ...progressBase,
-        prepared_chunks: frozenPlan.expected_child_count,
-        remaining_chunks: 0,
-        newly_prepared_chunks: 0,
-        previously_prepared_chunks: frozenPlan.expected_child_count,
-      },
-      publication: {
-        status: "indexed",
-        already_published: true,
-        active_revision_id: revisionId,
-        parent_count: frozenPlan.expected_parent_count,
-        child_count: frozenPlan.expected_child_count,
-        plan_hash: frozenPlan.plan_hash,
-      },
-      next_action: null,
-    };
-  }
-
+  const alreadyIndexed = source.active_revision_id === revisionId && revisionRow.status === "indexed";
   const lease = await acquireExecution(sourceId, "indexing", supabase);
+  let publicationAttempted = false;
+  let publicationAcknowledged = false;
   try {
-    const preparation = await prepareExperienceEmbeddingBatch({
-      snapshot,
-      revision: approvedRevision,
-      client: supabase as unknown as ExperienceEmbeddingPreparationClient,
-      executionToken: lease.execution_token,
-      batchSize: options.batchSize ?? EXPERIENCE_EMBEDDING_PREPARATION_BATCH_SIZE,
-      maxDurationMs: options.maxDurationMs ?? EXPERIENCE_EMBEDDING_PREPARATION_TIMEOUT_MS,
-      embed: options.embed,
-    });
-
-    const progress = {
+    let progress = {
       ...progressBase,
-      prepared_chunks: preparation.prepared_chunks,
-      remaining_chunks: preparation.remaining_chunks,
-      newly_prepared_chunks: preparation.newly_prepared_chunks,
-      previously_prepared_chunks: preparation.previously_prepared_chunks,
-      prepared_chunk_keys: preparation.prepared_chunk_keys,
-      next_chunk_keys: preparation.next_chunk_keys,
+      prepared_chunks: frozenPlan.expected_child_count,
+      remaining_chunks: 0,
+      newly_prepared_chunks: 0,
+      previously_prepared_chunks: frozenPlan.expected_child_count,
+      prepared_chunk_keys: [] as string[],
+      next_chunk_keys: [] as string[],
     };
+    if (!alreadyIndexed) {
+      const preparation = await prepareExperienceEmbeddingBatch({
+        snapshot,
+        revision: approvedRevision,
+        client: supabase as unknown as ExperienceEmbeddingPreparationClient,
+        executionToken: lease.execution_token,
+        batchSize: options.batchSize ?? EXPERIENCE_EMBEDDING_PREPARATION_BATCH_SIZE,
+        maxDurationMs: options.maxDurationMs ?? EXPERIENCE_EMBEDDING_PREPARATION_TIMEOUT_MS,
+        embed: options.embed,
+      });
+      progress = {
+        ...progressBase,
+        prepared_chunks: preparation.prepared_chunks,
+        remaining_chunks: preparation.remaining_chunks,
+        newly_prepared_chunks: preparation.newly_prepared_chunks,
+        previously_prepared_chunks: preparation.previously_prepared_chunks,
+        prepared_chunk_keys: preparation.prepared_chunk_keys,
+        next_chunk_keys: preparation.next_chunk_keys,
+      };
+    }
 
-    if (preparation.remaining_chunks > 0) {
-      await completeIndexingExecution(sourceId, lease.execution_token, "indexing", supabase);
+    if (progress.remaining_chunks > 0) {
+      await completeIndexingExecution(source, lease, "indexing", supabase);
       return {
         source_id: sourceId,
         revision_id: revisionId,
@@ -1020,27 +1031,24 @@ export async function indexExperienceRevision(
       };
     }
 
+    publicationAttempted = true;
     const { data, error } = await supabase.rpc("publish_experience_revision", {
       p_source_id: sourceId,
       p_revision_id: revisionId,
-      p_plan_hash: preparation.plan_hash,
-      p_approved_content_hash: preparation.approved_content_hash,
-      p_expected_parent_count: preparation.frozen_plan.expected_parent_count,
-      p_expected_child_count: preparation.frozen_plan.expected_child_count,
-      p_chunking_version: preparation.frozen_plan.preparation_config.chunking_version,
-      p_embedding_model: preparation.frozen_plan.preparation_config.embedding_model,
-      p_embedding_task_type: preparation.frozen_plan.preparation_config.embedding_task_type,
-      p_embedding_dimensions: preparation.frozen_plan.preparation_config.embedding_dimensions,
+      p_plan_hash: frozenPlan.plan_hash,
+      p_approved_content_hash: frozenPlan.approved_content_hash,
+      p_expected_parent_count: frozenPlan.expected_parent_count,
+      p_expected_child_count: frozenPlan.expected_child_count,
+      p_chunking_version: frozenPlan.preparation_config.chunking_version,
+      p_embedding_model: frozenPlan.preparation_config.embedding_model,
+      p_embedding_task_type: frozenPlan.preparation_config.embedding_task_type,
+      p_embedding_dimensions: frozenPlan.preparation_config.embedding_dimensions,
       p_execution_token: lease.execution_token,
     });
     if (error) {
-      const failure = {
-        stage: "indexing",
-        code: isConflictLike(error) ? "index-publication-conflict" : "index-publication-failed",
-        message: errorMessage(error),
-        recoverable_action: "retry-index",
-      };
-      await completeIndexingExecution(sourceId, lease.execution_token, "approved", supabase, failure);
+      if (error.code === "40001" && error.message === "Experience publication candidate is stale") {
+        throw staleCandidate();
+      }
       throw new ExperienceApiError(
         isConflictLike(error) ? "index-publication-conflict" : "index-publication-failed",
         errorMessage(error),
@@ -1049,30 +1057,47 @@ export async function indexExperienceRevision(
     }
 
     // Publication consumes the lease in the same transaction as the active switch.
-    const publication = (firstRow<Record<string, unknown>>(data) ?? (data as Record<string, unknown> | null)) || {
-      status: "indexed",
-      already_published: false,
-      revision_id: revisionId,
-      active_revision_id: revisionId,
-      parent_count: preparation.frozen_plan.expected_parent_count,
-      child_count: preparation.frozen_plan.expected_child_count,
-      plan_hash: preparation.plan_hash,
-    };
+    publicationAcknowledged = true;
+    const parsedPublication = z.object({
+      status: z.literal("indexed"),
+      already_published: z.boolean(),
+      revision_id: z.literal(revisionId),
+      active_revision_id: z.literal(revisionId),
+      parent_count: z.literal(frozenPlan.expected_parent_count),
+      child_count: z.literal(frozenPlan.expected_child_count),
+      plan_hash: z.literal(frozenPlan.plan_hash),
+    }).passthrough().safeParse(firstRow<Record<string, unknown>>(data) ?? data);
+    if (!parsedPublication.success) {
+      throw new ExperienceApiError("index-publication-response-invalid", "Publication could not be confirmed. Refresh the source before retrying.", 502);
+    }
+    const publication = parsedPublication.data;
 
     return {
       source_id: sourceId,
       revision_id: revisionId,
       status: "indexed",
+      already_published: publication.already_published,
       stage: "published",
       progress,
       publication,
       next_action: null,
     };
   } catch (error) {
-    if (error instanceof ExperienceApiError && error.code.startsWith("index-publication-")) {
-      throw error;
+    if (!publicationAcknowledged) {
+      try {
+        await completeIndexingExecution(source, lease,
+          publicationAttempted ? (alreadyIndexed ? "indexed" : "approved") : "failed",
+          supabase, {
+            stage: "indexing",
+            code: safeCode(error),
+            message: safeMessage(error, "Indexing failed."),
+            recoverable_action: error instanceof ExperienceApiError && error.code === "index-candidate-stale"
+              ? "refresh-source" : "retry-index",
+          });
+      } catch {
+        // Preserve the original error. A changed/expired lease is left untouched.
+      }
     }
-    await completeFailedExecution(sourceId, lease.execution_token, "indexing", error, supabase);
     throw error;
   }
 }

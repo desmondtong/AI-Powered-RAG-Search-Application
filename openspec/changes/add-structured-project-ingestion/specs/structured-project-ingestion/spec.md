@@ -141,22 +141,79 @@ The system SHALL publish all parents and children of an approved document revisi
 
 #### Scenario: Replacement succeeds
 - **WHEN** a complete approved replacement is published successfully
-- **THEN** it becomes the source's sole active indexed revision and prior live parents and children are removed in the same database transaction
+- **THEN** it becomes the source's sole active indexed revision and prior live parents and children are removed in the same database transaction, while prior approved JSON, source snapshots, and logical citation history remain retained until source deletion
 
 #### Scenario: Older indexing work finishes after a newer approval
-- **WHEN** an older revision attempts publication after the user approved a newer candidate for the same source
-- **THEN** the system refuses the stale publication without replacing the active revision or the newer approved candidate
+- **WHEN** a never-published older revision attempts publication after a newer candidate is approved or published for the same source, even with a valid indexing lease and complete staging
+- **THEN** the system refuses the stale publication without changing the active revision, the newer approved candidate, or evidence
 
 ### Requirement: Idempotent upload and indexing retries
-The system SHALL resolve byte-identical repeated uploads to the existing source and make repeated execution for the same approved revision safe. Explicit reparsing SHALL create a new reviewable revision rather than overwrite approval.
+The system SHALL resolve byte-identical repeated uploads to the existing source. Publication retry success SHALL require the requested revision to remain both current active and latest approved, with a valid indexing lease and matching publication parameters and live evidence. Outdated indexing requests SHALL be rejected even if previously published. Explicit reparsing SHALL create a new reviewable revision rather than overwrite approval.
 
 #### Scenario: Upload is retried after response loss
 - **WHEN** the same file bytes are uploaded again
 - **THEN** the system returns the existing source and its recoverable workflow state rather than creating duplicate sources or evidence
 
 #### Scenario: Publication response is lost
-- **WHEN** the user retries indexing a revision whose publication already committed
-- **THEN** the system returns its indexed status without duplicating parents or children
+- **WHEN** a revision's publication committed but its response was lost, and a retry obtains a new valid indexing lease while that revision remains current active and latest approved with matching publication parameters and live evidence
+- **THEN** the system returns `status: indexed` and `already_published: true` without regenerating embeddings, requiring cleared staging, or duplicating or recreating parents or children
+
+#### Scenario: Previously published revision is retried after a newer approval
+- **WHEN** R1 published successfully and remains active, R2 is now the latest approved candidate, and an R1 indexing request is retried with an otherwise valid lease and matching parameters
+- **THEN** the system rejects R1 as outdated without a publication-success response, leaves R1 active and searchable, and preserves R2's candidate identity and prepared work
+
+#### Scenario: Previously published revision is retried after replacement
+- **WHEN** R2 has successfully replaced R1 and an R1 indexing request is retried with an otherwise valid lease
+- **THEN** the system rejects R1 as outdated, keeps R2 active, and does not recreate R1's removed live mappings, parents, or children or return historical-success acknowledgement
+
+### Requirement: Validated publication retry responses
+The system SHALL validate source ownership, approved and plan hashes, expected counts, chunking and embedding configuration, and live evidence before current-version retry success. Successful retries SHALL report validated current publication state, not inferred historical success. The system SHALL NOT add historical publication receipts.
+
+#### Scenario: Current-version retry returns verified publication state
+- **WHEN** a permitted current-active and latest-approved retry passes all publication validation
+- **THEN** `revision_id` and `active_revision_id` identify that revision at success, `parent_count`, `child_count`, and `plan_hash` describe its validated live publication, progress shows zero remaining or newly prepared chunks, and `next_action` is null
+
+#### Scenario: Publication parameters or source ownership do not match
+- **WHEN** a current-version retry supplies another source's revision or mismatches the approved hash, plan hash, either expected count, chunking version, embedding model, task type, or dimensions, including missing or invalid required values
+- **THEN** the system rejects the retry without changing publication evidence or pointers and does not silently substitute values to return success
+
+#### Scenario: Current-version live evidence is incomplete
+- **WHEN** a current-active and latest-approved retry has a valid indexing lease but live publication membership, configuration, or counts are missing or inconsistent
+- **THEN** the system fails validation rather than trusting an indexed label, returning success, or recreating evidence through the retry
+
+### Requirement: Fenced publication execution
+The system SHALL require current, unexpired, source-owned indexing execution authority for publication and retry success. Successful publication SHALL atomically consume its matching lease. Rejected publication SHALL leave pre-call state unchanged; separate failure cleanup SHALL remain token-fenced and SHALL NOT clear another execution's lease or overwrite newer lifecycle state.
+
+#### Scenario: Invalid execution authority is supplied
+- **WHEN** publication or a current-version retry supplies a missing, expired, replaced, or wrong-stage execution token
+- **THEN** the system rejects the request without publication success, evidence changes, or consumption of another execution's lease
+
+#### Scenario: Successful publication consumes its lease
+- **WHEN** first publication or a permitted current-version retry succeeds
+- **THEN** its matching token, stage, expiry, and start fields are cleared atomically, no second completion write is issued, and another response-loss retry requires new valid execution authority
+
+#### Scenario: Candidate changes during an indexing request
+- **WHEN** a request passed an earlier latest-candidate check but a newer approval wins before publication
+- **THEN** the system rejects the outdated request at publication rather than relying on the earlier snapshot, leaves pre-publication state unchanged, and any separate cleanup preserves newer execution ownership and lifecycle state
+
+### Requirement: Actionable outdated indexing conflicts
+The system SHALL return HTTP 409 with a stable stale-candidate classification and clear guidance for outdated indexing requests. The application SHALL stop that request sequence, refresh source, latest-approved, and active state, and require an explicit action against the refreshed candidate. It SHALL NOT automatically resubmit an outdated request or silently retarget it.
+
+#### Scenario: Outdated request is rejected before preparation
+- **WHEN** the requested revision is already outdated when indexing begins
+- **THEN** the application explains that a newer approved revision must be reviewed before another indexing action, refreshes source detail, and sends no automatic retry for the outdated revision
+
+#### Scenario: Publication detects a late candidate conflict
+- **WHEN** a newer approval makes an in-flight indexing request outdated at publication
+- **THEN** the application handles the conflict with the same clear message and state refresh, preserves the displayed distinction between active search evidence and candidate work, and waits for an explicit indexing action
+
+#### Scenario: Refresh after a conflict fails
+- **WHEN** the application cannot refresh source state after an outdated-request conflict
+- **THEN** it reports the refresh failure, keeps indexing stopped, and does not use stale detail or a retry action to automatically resend or retarget the request
+
+#### Scenario: Conflict is not caused by an outdated candidate
+- **WHEN** execution ownership or another publication condition causes a conflict without a newer approved candidate
+- **THEN** the system reports the relevant conflict rather than treating every SQLSTATE `40001` as candidate staleness or blindly retrying the request
 
 ### Requirement: Approved active evidence search boundary
 The system SHALL expose an ingestion-owned retrieval contract that searches only active approved indexed revisions. An explicitly supplied source selection SHALL constrain candidates before top-K retrieval; unknown or ineligible selected sources SHALL NOT widen the search.
@@ -164,6 +221,10 @@ The system SHALL expose an ingestion-owned retrieval contract that searches only
 #### Scenario: Unapproved or standalone evidence exists
 - **WHEN** retrieval is invoked through the ingestion-owned contract
 - **THEN** draft, failed, inactive, deleted, and standalone evidence without an approved publication relationship is excluded
+
+#### Scenario: A replacement is approved but not successfully published
+- **WHEN** R1 remains the active indexed revision while R2 is approved, preparing, or has failed publication
+- **THEN** retrieval continues to use R1 until atomic replacement succeeds, even though R1 is no longer the latest approved candidate, and rejecting an R1 indexing retry does not hide or delete its active evidence
 
 #### Scenario: Source selection is supplied
 - **WHEN** the caller selects a subset of indexed experience sources
@@ -174,7 +235,7 @@ The system SHALL expose an ingestion-owned retrieval contract that searches only
 - **THEN** the system returns no matches or an explicit eligibility error rather than searching all sources
 
 ### Requirement: Reproducible revision export
-The system SHALL expose the retained structured revision, source-reference resolution, canonical hash, and parser/model/prompt/schema/chunking/embedding configuration versions for trusted downstream consumers. Logical IDs SHALL survive retries and reindexing of the same frozen revision.
+The system SHALL expose the retained structured revision, source-reference resolution, canonical hash, and parser/model/prompt/schema/chunking/embedding configuration versions for trusted downstream consumers. Logical IDs SHALL survive permitted retries and retained exports of the same frozen revision; retained history SHALL NOT authorize publication of an outdated revision.
 
 #### Scenario: Accepted revision is reused for evaluation
 - **WHEN** a downstream evaluation requests a retained approved revision
@@ -190,6 +251,10 @@ The system SHALL immediately make a deleted experience source ineligible for ret
 #### Scenario: Source is deleted during indexing
 - **WHEN** deletion wins the source lifecycle lock while an indexing request is running
 - **THEN** publication is refused, its evidence is removed or remains unpublished, and retry cannot resurrect the deleted source
+
+#### Scenario: Previously published revision is retried after deletion
+- **WHEN** a publication retry targets a previously published revision of a tombstoned, cleanup-pending, or removed source
+- **THEN** the system rejects the request regardless of prior success or an old token, returns no cached publication success, and does not recreate evidence or restore source eligibility
 
 #### Scenario: Storage cleanup fails
 - **WHEN** database evidence removal succeeds but original-file deletion fails

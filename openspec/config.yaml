@@ -30,3 +30,11 @@ schema: spec-driven
 #     archive:
 #       guidance:
 #         - Summarize the archive outcome before finishing
+
+operations:
+  apply:
+    guidance:
+      - For any user-facing UI change, the implementation is not complete until the agent starts the app locally, opens it in a real browser or browser automation session, and walks through the changed workflow end to end.
+      - Code-level tests, static contract tests, lint, typecheck, and build are required but do not replace browser walkthrough verification.
+      - The final implementation summary must include the dev server command, URL, browser walkthrough steps performed, observed result, and any screenshots or limitations.
+      - If browser automation is unavailable, mark the browser walkthrough as blocked and explain why; do not silently substitute unit tests.

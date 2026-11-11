@@ -39,6 +39,7 @@
 - [ ] 6.1 Add an end-to-end deterministic eval suite using the synthetic fixtures; verify it covers requirement extraction, retrieval recall, citation validity, unsupported positive claims, gap visibility, selected-source behavior, active-vs-latest behavior, and generic-search separation.
 - [ ] 6.2 Run the eval test command, JD-fit tests, `npm run test:experience`, `npm run lint`, `npx tsc --noEmit`, and `npm run build`; verify all pass and record any environment limitations in implementation notes.
 - [ ] 6.3 Run `openspec validate add-rag-quality-evals --strict`; verify the change passes strict validation after implementation.
+- [ ] 6.4 Run browser acceptance verification if this implementation changes any user-facing UI: start the app with `npm run dev`, open the local URL in a real browser or browser automation session, walk through the affected workflow end to end using actual clicks, typing, and uploads where applicable, and verify loading, empty, error, and success states render correctly. Record the URL, steps performed, observed results, screenshots if useful, and any limitations in the implementation notes; if the change remains eval-only with no browser surface, record that browser verification was not applicable and why.
 
 ## Workflow follow-up
 

@@ -41,6 +41,7 @@
 - [ ] 6.1 Add a synthetic end-to-end JD-fit flow with mocked JD parsing, approved-search evidence, report generation, and citation validation; verify prompt-injection text is ignored, active approved evidence is cited, missing evidence is reported as a gap, and every positive claim has a retained-source citation.
 - [ ] 6.2 Run the scoped JD-fit tests, `npm run test:experience`, `npm run lint`, `npx tsc --noEmit`, and `npm run build`; verify all pass and record any environment limitations in implementation notes.
 - [ ] 6.3 Run `openspec validate add-jd-fit-evaluation --strict`; verify the change passes strict validation after implementation.
+- [ ] 6.4 Run browser acceptance verification for JD-fit mode: start the app with `npm run dev`, open the local URL in a real browser or browser automation session, switch to JD-fit mode on the Search page, paste a sample JD, choose or clear sources where applicable, submit the evaluation, and verify loading, cited fit report, gaps/no-evidence state, retryable error state, and return to generic search mode all behave correctly in the browser. Record the URL, steps performed, observed results, screenshots if useful, and any limitations in the implementation notes.
 
 ## Workflow follow-up
 

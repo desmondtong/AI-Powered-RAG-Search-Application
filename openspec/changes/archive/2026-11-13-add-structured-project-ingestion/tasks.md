@@ -2,7 +2,7 @@
 
 ## Follow-up scope and execution boundary
 
-This update records planning only. Checked tasks below preserve prior completion history, not new verification of the revised retry policy. Task 10.4 is reopened and section 11 remains unchecked until its evidence is recorded and any acceptance-blocking discrepancies are resolved and verified under separate authorization.
+Task 10.4 was reopened for this retry-policy follow-up and section 11 added. Both are now complete: section 11 evidence and the authorized API/UI fixes are recorded in `supabase-retry-policy-verification-2026-11-11.md`, and revised final acceptance passed on 2026-11-11.
 
 Reject every indexing/publication request whose revision is no longer the latest approved candidate, including previously published revisions. Keep idempotent success only for the current active revision while it remains the latest approved candidate, with a valid indexing lease and matching publication parameters/live evidence. Do not add historical publication receipts or historical-success acknowledgements.
 
@@ -63,7 +63,7 @@ Future database verification requires separate authorization and repository-reco
 
 - [x] 7.1 Add bounded embedding preparation and conditional staging writes keyed by approved revision/plan/configuration hashes; verify batch limits, valid 1536-dimensional vectors, progress restoration, and reuse of compatible checkpoints only.
 - [x] 7.2 Implement transactional whole-revision publication using staged data and existing per-parent insertion RPC, with source-then-revision locking and count/hash checks; verify a forced invalid child rolls back all new parents/children/mappings.
-- [x] 7.3 Add active replacement and current-active/latest-approved idempotent publication responses; verify previous live rows remain during preparation, successful replacement removes old parents/children atomically, and a permitted response-loss retry creates no duplicates. This retained completion record does not cover superseded-revision success or establish API lease compliance; revised remote and application verification remains open in section 11.
+- [x] 7.3 Add active replacement and current-active/latest-approved idempotent publication responses; verify previous live rows remain during preparation, successful replacement removes old parents/children atomically, and a permitted response-loss retry creates no duplicates. Superseded-revision success is not permitted, and API lease compliance was verified separately in section 11.
 - [x] 7.4 Reject stale tokens, altered approved content, mixed embedding configurations, deleted sources, and older approved candidates; verify an older indexing request cannot replace a newer approval or reactivate a superseded revision.
 - [x] 7.5 Add the index endpoint's next-batch/publish behavior and safe progress/error response; verify interrupted/failed embedding preparation resumes from compatible work without reporting indexed status early.
 - [x] 7.6 Document indexing checkpoints, restart conditions, publication guarantees, and failure recovery; verify a development-database multi-project insertion/replacement smoke and atomic rollback checks using synthetic data.

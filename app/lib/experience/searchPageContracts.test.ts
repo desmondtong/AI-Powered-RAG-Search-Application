@@ -10,6 +10,11 @@ describe("generic search page contract", () => {
 
     assert.match(page, /fetch\("\/api\/search"/);
     assert.doesNotMatch(page, /\/api\/experiences/);
+
+    // JD-fit mode lives on the same page but reaches only its own endpoint, never the experiences API.
+    const jdFitPanel = readFileSync(join(process.cwd(), "app/components/JdFitPanel.tsx"), "utf8");
+    assert.doesNotMatch(jdFitPanel, /\/api\/experiences/);
+    assert.doesNotMatch(jdFitPanel, /\/api\/search/);
     assert.match(route, /match_documents/);
     assert.doesNotMatch(route, /approved_experience_search/);
   });

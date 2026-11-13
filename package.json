@@ -7,7 +7,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "test:experience": "rm -rf .experience-test-build && tsc -p tsconfig.experience-tests.json && node --test .experience-test-build/app/lib/experience/*.test.js"
+    "test:experience": "rm -rf .experience-test-build && tsc -p tsconfig.experience-tests.json && node --test .experience-test-build/app/lib/experience/*.test.js",
+    "test:jd-fit": "rm -rf .jd-fit-test-build && tsc -p tsconfig.jd-fit-tests.json && node --test \".jd-fit-test-build/app/lib/jdFit/**/*.test.js\""
   },
   "dependencies": {
     "@google/genai": "^2.31.0",

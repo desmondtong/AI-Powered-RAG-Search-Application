@@ -40,26 +40,22 @@ The system SHALL retrieve evidence only through the ingestion-owned approved-sea
 
 #### Scenario: Replacement is approved but not indexed
 - **WHEN** R1 is active and indexed while R2 is approved, preparing, or failed
-- **THEN** JD-fit retrieval uses R1 and does not use R2 until atomic replacement succeeds
+- **THEN** JD-fit retrieval uses R1 until atomic replacement succeeds, and retrieved evidence and citations carry R1's revision ID and approved content hash rather than R2's
 
 #### Scenario: No active approved evidence exists
 - **WHEN** no eligible active indexed approved evidence is available
 - **THEN** the report states that no approved evidence is available and does not use generic document chunks
 
-### Requirement: Selected-source semantics
-The system SHALL apply optional source selection before retrieval using ingestion semantics: omitted selection means all eligible sources, explicit empty selection means no matches, and stale or ineligible selections return an explicit error.
+### Requirement: All indexed experience sources
+The system SHALL evaluate every JD against all eligible active indexed experience sources. The JD-fit request MUST NOT accept a source selection in this version.
 
-#### Scenario: Selection is omitted
-- **WHEN** the JD-fit request omits selected sources
-- **THEN** retrieval searches all eligible active indexed experience sources
+#### Scenario: Evaluation searches all eligible sources
+- **WHEN** a user submits a JD for evaluation
+- **THEN** retrieval searches all eligible active indexed experience sources without a source filter
 
-#### Scenario: Selection is explicitly empty
-- **WHEN** the JD-fit request supplies an empty selected-source list
-- **THEN** the evaluation returns no evidence matches without widening to all sources
-
-#### Scenario: Selection contains ineligible source
-- **WHEN** the JD-fit request selects a stale, deleted, draft-only, failed, or unknown source
-- **THEN** the system returns a source-eligibility error and does not run an unconstrained search
+#### Scenario: Request includes a source selection
+- **WHEN** a JD-fit request includes a source selection or another unsupported field
+- **THEN** the system rejects the request with a validation error and does not run retrieval
 
 ### Requirement: Requirement-level fit classification
 The system SHALL classify each extracted requirement with categorical fit labels and short evidence-grounded rationale. It MUST NOT expose numeric fit scores.
@@ -100,6 +96,17 @@ The system SHALL enforce retrieval, deduplication, context, and generation limit
 #### Scenario: Report is returned
 - **WHEN** JD-fit evaluation succeeds
 - **THEN** the response includes model, prompt, retrieval, and validation version metadata that can support later evaluation
+
+#### Scenario: Evaluation exceeds the overall deadline
+- **WHEN** parsing, retrieval, and report generation do not finish within the configured overall deadline
+- **THEN** the system returns an explicit timeout error and no partial report
+
+### Requirement: Same-origin JD-fit requests
+The system SHALL reject JD-fit requests that do not come from the application's own origin before parsing the JD, retrieving evidence, or calling a model.
+
+#### Scenario: Cross-origin request is made
+- **WHEN** another website causes a browser to send a JD-fit request
+- **THEN** the system rejects it with an origin error and makes no model or database calls
 
 ### Requirement: Generic search compatibility
 The system SHALL preserve the current generic search route and response contract. Generic search MUST NOT silently route through approved experience search or JD-fit evaluation.

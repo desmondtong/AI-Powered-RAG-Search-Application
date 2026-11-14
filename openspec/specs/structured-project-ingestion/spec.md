@@ -7,11 +7,11 @@ Turns personal experience files into source-linked structured revisions that a u
 ## Requirements
 
 ### Requirement: Separate experience upload workflow
-The system SHALL accept DOCX and selectable-text PDF experience files through a workflow separate from generic document upload. It SHALL NOT require user-authored JSON, perform OCR, or convert legacy binary DOC files in v1.
+The system SHALL accept DOCX and selectable-text PDF experience files through the experience upload workflow, which is the application's only document intake. It SHALL NOT require user-authored JSON, perform OCR, or convert legacy binary DOC files in v1.
 
 #### Scenario: Experience file is uploaded
 - **WHEN** the user uploads a supported experience file
-- **THEN** the system creates or resolves a source identity and begins an experience ingestion workflow without inserting generic document chunks
+- **THEN** the system creates or resolves a source identity and begins an experience ingestion workflow
 
 #### Scenario: Legacy DOC is uploaded
 - **WHEN** the user uploads a legacy binary DOC file
@@ -259,14 +259,3 @@ The system SHALL immediately make a deleted experience source ineligible for ret
 #### Scenario: Storage cleanup fails
 - **WHEN** database evidence removal succeeds but original-file deletion fails
 - **THEN** the system reports cleanup pending, retains only the information needed to retry cleanup, and returns no evidence for the source
-
-### Requirement: Generic workflow compatibility
-The system SHALL preserve generic upload, search, list/detail/file access, and deletion behavior while adding explicit experience controls. This change SHALL NOT implement JD-fit generation or silently route existing Search requests to the evidence index.
-
-#### Scenario: Generic document remains usable
-- **WHEN** the user uploads, searches, previews, or deletes a document through existing generic controls
-- **THEN** the generic workflow remains available independently of experience review and indexing
-
-#### Scenario: Indexed experience appears in Documents
-- **WHEN** the user opens the experience section
-- **THEN** source status, review actions, and indexed counts reflect the experience lifecycle rather than generic chunk metadata

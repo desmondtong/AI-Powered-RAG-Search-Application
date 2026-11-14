@@ -40,10 +40,3 @@ The system SHALL keep parent records and child chunks consistent during listing 
 #### Scenario: Evidence record is deleted
 - **WHEN** a parent evidence record is deleted
 - **THEN** the system also removes or invalidates its child chunks so stale vectors are not returned by evidence search
-
-### Requirement: Existing generic RAG compatibility
-The system SHALL preserve the existing generic document upload and search behavior during the evidence-index transition.
-
-#### Scenario: Existing document search remains usable
-- **WHEN** users upload and search normal documents through the current generic RAG flow
-- **THEN** the system continues to support that flow without requiring structured project ingestion or JD-fit evaluation

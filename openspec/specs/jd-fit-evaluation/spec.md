@@ -6,16 +6,16 @@ Lets users evaluate a pasted job description against active approved experience 
 
 ## Requirements
 
-### Requirement: Explicit JD-fit workflow
-The system SHALL expose JD-fit evaluation as an explicit user-selected workflow for pasted job descriptions while keeping the generic search workflow available and unchanged.
+### Requirement: Primary JD-fit workflow
+The system SHALL expose JD-fit evaluation as the application's primary workflow for pasted job descriptions. Evaluation SHALL run only when the user explicitly submits a job description.
 
-#### Scenario: User chooses JD-fit mode
-- **WHEN** the user enters a job description in JD-fit mode
-- **THEN** the system evaluates it through the JD-fit workflow rather than the generic document search workflow
+#### Scenario: User submits a job description
+- **WHEN** the user enters a job description and requests evaluation
+- **THEN** the system evaluates it through the JD-fit workflow against approved experience evidence
 
-#### Scenario: User stays in generic search
-- **WHEN** the user enters a query in generic search mode
-- **THEN** the system uses the existing generic search behavior and does not invoke JD-fit evaluation
+#### Scenario: Job description is not submitted
+- **WHEN** the user types or edits a job description without requesting evaluation
+- **THEN** the system performs no retrieval or model call
 
 ### Requirement: JD input is untrusted data
 The system SHALL treat job description text as untrusted input. JD content MUST NOT override system instructions, retrieval scope, tool choices, citation rules, or output validation.
@@ -44,7 +44,7 @@ The system SHALL retrieve evidence only through the ingestion-owned approved-sea
 
 #### Scenario: No active approved evidence exists
 - **WHEN** no eligible active indexed approved evidence is available
-- **THEN** the report states that no approved evidence is available and does not use generic document chunks
+- **THEN** the report states that no approved evidence is available, marks every requirement as unsupported, and does not draw evidence from any other source
 
 ### Requirement: All indexed experience sources
 The system SHALL evaluate every JD against all eligible active indexed experience sources. The JD-fit request MUST NOT accept a source selection in this version.
@@ -107,13 +107,6 @@ The system SHALL reject JD-fit requests that do not come from the application's 
 #### Scenario: Cross-origin request is made
 - **WHEN** another website causes a browser to send a JD-fit request
 - **THEN** the system rejects it with an origin error and makes no model or database calls
-
-### Requirement: Generic search compatibility
-The system SHALL preserve the current generic search route and response contract. Generic search MUST NOT silently route through approved experience search or JD-fit evaluation.
-
-#### Scenario: Generic search request is made
-- **WHEN** a client calls the generic search API with a normal query
-- **THEN** the response follows the existing generic search contract and does not require structured experience ingestion
 
 ### Requirement: No ingestion mutation
 The system SHALL NOT create, approve, index, retry, publish, delete, or otherwise mutate experience-ingestion state during JD-fit evaluation.

@@ -172,22 +172,15 @@ The system SHALL provide separate, explicitly flagged commands that seed synthet
 
 #### Scenario: Reset runs
 - **WHEN** the reset command runs with its own explicit flag against the allowed project
-- **THEN** every experience source in the project is deleted through the accepted deletion function and generic documents are left untouched
+- **THEN** every experience source in the project is deleted through the accepted deletion function and no evidence-index row is touched directly
 
 #### Scenario: Project is not allowed
 - **WHEN** any corpus command runs and the configured Supabase project does not match the allowed project reference
 - **THEN** the command refuses before any write
 
 ### Requirement: Read-only evaluation runner
-The evaluation runner SHALL NOT create, approve, index, retry, publish, delete, upload, or otherwise mutate experience, generic-document, database, or Storage state in any mode. Mutation SHALL occur only in the corpus commands.
+The evaluation runner SHALL NOT create, approve, index, retry, publish, delete, upload, or otherwise mutate experience, evidence-index, database, or Storage state in any mode. Mutation SHALL occur only in the corpus commands.
 
 #### Scenario: Runner executes
 - **WHEN** deterministic or live evaluation runs
-- **THEN** mutation spies on ingestion, JD-fit, generic document, database, and Storage seams observe no calls
-
-### Requirement: Generic workflow compatibility
-The system SHALL preserve generic upload and search behavior and SHALL NOT require generic documents or production UI flows to run quality evaluations.
-
-#### Scenario: Generic search exists beside evals
-- **WHEN** quality evaluations are added
-- **THEN** existing generic search remains usable without running structured ingestion, JD-fit, or eval fixtures
+- **THEN** mutation spies on ingestion, JD-fit, evidence-index, database, and Storage seams observe no calls

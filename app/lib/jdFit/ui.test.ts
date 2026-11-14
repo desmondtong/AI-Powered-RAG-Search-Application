@@ -72,16 +72,14 @@ describe("JD-fit Search page states", () => {
     assert.deepEqual(JSON.parse(buildJdFitRequestBody("Backend engineer")), { jdText: "Backend engineer" });
   });
 
-  it("keeps generic search on /api/search and JD-fit mode on /api/jd-fit only", () => {
+  it("renders the JD-fit panel directly on the home page and calls /api/jd-fit only", () => {
     const page = read("app/page.tsx");
     const panel = read("app/components/JdFitPanel.tsx");
     const ui = read("app/lib/jdFit/ui.ts");
 
-    assert.match(page, /fetch\("\/api\/search"/);
-    assert.match(page, /Answer:/);
-    assert.match(page, /Sources \(\{sources\.length\}\)/);
-    assert.match(page, /role="tablist"/);
     assert.match(page, /<JdFitPanel \/>/);
+    assert.doesNotMatch(page, /role="tablist"/);
+    assert.doesNotMatch(page, /\/api\/search/);
     assert.doesNotMatch(page, /\/api\/jd-fit/);
 
     assert.match(panel, /fetch\(JD_FIT_ENDPOINT/);

@@ -15,7 +15,7 @@ interface UploadModalProps {
   kind?: DocumentsUploadKind;
 }
 
-export default function UploadModal({ isOpen, onClose, onUploadSuccess, kind = "generic" }: UploadModalProps) {
+export default function UploadModal({ isOpen, onClose, onUploadSuccess, kind = "experience" }: UploadModalProps) {
   const config = getDocumentsUploadConfig(kind);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);

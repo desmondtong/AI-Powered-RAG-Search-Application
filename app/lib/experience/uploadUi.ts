@@ -1,4 +1,4 @@
-export type DocumentsUploadKind = "generic" | "experience";
+export type DocumentsUploadKind = "experience";
 
 export interface DocumentsUploadConfig {
   kind: DocumentsUploadKind;
@@ -13,17 +13,6 @@ export interface DocumentsUploadConfig {
 }
 
 const UPLOAD_CONFIGS: Record<DocumentsUploadKind, DocumentsUploadConfig> = {
-  generic: {
-    kind: "generic",
-    endpoint: "/api/upload",
-    title: "Upload Generic Document",
-    inputLabel: "Select a file (PDF, DOCX, or TXT)",
-    accept: ".pdf,.docx,.txt",
-    buttonLabel: "Upload Document",
-    uploadingLabel: "Uploading and Processing...",
-    supportedLabel: "Supported: PDF, DOCX, TXT",
-    supportDetail: "Files will be processed and embedded for generic RAG search.",
-  },
   experience: {
     kind: "experience",
     endpoint: "/api/experiences",
@@ -37,7 +26,7 @@ const UPLOAD_CONFIGS: Record<DocumentsUploadKind, DocumentsUploadConfig> = {
   },
 };
 
-export function getDocumentsUploadConfig(kind: DocumentsUploadKind = "generic") {
+export function getDocumentsUploadConfig(kind: DocumentsUploadKind = "experience") {
   return UPLOAD_CONFIGS[kind];
 }
 
@@ -46,9 +35,6 @@ export function isDocumentsUploadSuccess(kind: DocumentsUploadKind, responseBody
     return false;
   }
   const body = responseBody as Record<string, unknown>;
-  if (kind === "generic") {
-    return body.success === true;
-  }
   return typeof body.source === "object" && body.source !== null && !body.error;
 }
 
@@ -75,12 +61,6 @@ export function getDocumentsUploadSuccessMessage(
   fallbackFileName: string,
 ) {
   const body = responseBody && typeof responseBody === "object" ? (responseBody as Record<string, unknown>) : {};
-  if (kind === "generic") {
-    const fileName = typeof body.fileName === "string" ? body.fileName : fallbackFileName;
-    const chunks = typeof body.chunks === "number" ? body.chunks : 0;
-    return `File "${fileName}" uploaded successfully! Processed ${chunks} chunks.`;
-  }
-
   const source = body.source && typeof body.source === "object" ? (body.source as Record<string, unknown>) : {};
   const fileName = typeof source.file_name === "string" ? source.file_name : fallbackFileName;
   const nextAction = typeof body.next_action === "string" ? body.next_action : "extract";

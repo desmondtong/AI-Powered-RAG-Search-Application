@@ -28,7 +28,7 @@ Guarantees:
 - **Same ground truth as live.** Exports are synthesized with the real extraction-snapshot builder, one block per paragraph, and anchors are resolved by the same code live mode uses.
 - **Reproducible.** Identical fixtures, runner version, and JD-fit versions produce a byte-identical report, including run ID and timestamps.
 - **Fails closed.** If a run would need a live model, Supabase, or Storage client, it throws a configuration error instead.
-- **Read-only.** The command never imports the corpus commands. Tests spy on every ingestion, generic-document, database, and Storage mutation seam and observe no calls.
+- **Read-only.** The command never imports the corpus commands. Tests spy on every ingestion, evidence-index, database, and Storage mutation seam and observe no calls.
 - **Harness checks are labeled.** Offline requirement-extraction and retrieval metrics only prove the scorer over scripted inputs. Reports mark them with `harness_check` and an asterisk.
 
 ## Fixtures
@@ -241,7 +241,7 @@ The commands load `.env.local` for the Supabase URL, service role key, and Gemin
 
 - **`seed`** renders each fixture's paragraphs into a minimal DOCX named `rag-eval__<fixture>__<stem>.docx` and calls the accepted ingestion service functions directly: upload, extract, parse, approve, and index until published. If the parsed draft leaves blocks unassigned or has extraction warnings, `seed` saves the draft once with those acknowledged, as a reviewer would, and approves the saved version. For the active-vs-latest plan it then creates a draft from R1, applies the grounded edit, saves, and approves it without indexing. After each fixture it writes `.rag-eval/manifest.json` with the fixture schema version, project ref, each fixture's content hash, source ID, and every revision's ID, approved content hash, role, and active and indexed flags. If a fixture fails part-way, its partial source is deleted.
 - **`teardown`** deletes every manifest source through the accepted deletion function. A source whose Storage cleanup is pending stays in the manifest and is reported as `cleanup-pending`; run `teardown` again to retry. The manifest is removed only when every delete succeeds. A source that is already gone counts as deleted, so teardown is idempotent.
-- **`reset`** deletes every experience source the project lists, including ones the harness did not create, then removes the manifest. Generic documents are never touched. Use it when the project holds only test data, or to recover from a lost manifest.
+- **`reset`** deletes every experience source the project lists, including ones the harness did not create, then removes the manifest. Evidence-index rows are only removed through the accepted deletion function. Use it when the project holds only test data, or to recover from a lost manifest.
 
 ### Resident corpus
 

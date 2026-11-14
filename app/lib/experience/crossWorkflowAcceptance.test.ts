@@ -259,10 +259,10 @@ function structuredDocxFile() {
   return fileFromBuffer(bytes, "structured-experience.docx", DOCX_MIME);
 }
 
-function genericPdfFile() {
+function selectablePdfFixtureFile() {
   const source = readFileSync(join(process.cwd(), "app/lib/experience/documentExtraction.test.ts"), "utf8");
   const match = source.match(/const PDF_FIXTURE_GZIP_BASE64 = `([\s\S]*?)`;/);
-  assert.ok(match, "generic selectable-PDF fixture should remain available");
+  assert.ok(match, "shared selectable-PDF fixture in documentExtraction.test.ts should remain available");
   const bytes = gunzipSync(Buffer.from(match[1].replace(/\s/g, ""), "base64"));
   return fileFromBuffer(bytes, "structured-experience.pdf", "application/pdf");
 }
@@ -1103,7 +1103,7 @@ describe("cross-workflow acceptance", () => {
     });
     const pdf = await runAcceptanceFlow({
       client,
-      file: genericPdfFile(),
+      file: selectablePdfFixtureFile(),
       revisionId: "revision-acceptance-pdf",
       proposal: pdfProposal,
     });

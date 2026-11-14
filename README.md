@@ -1,4 +1,4 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+A personal job-fit tool built on [Next.js](https://nextjs.org). You upload your own experience files (DOCX or selectable-text PDF), review the source-grounded draft the app extracts from each one, and approve and index it as evidence. You then paste a job description, and the app evaluates each of its requirements against that approved evidence, returning a categorical fit report in which every claim cites the source text it came from.
 
 ## Environment
 
@@ -13,7 +13,7 @@ GEMINI_API_KEY=your-google-ai-studio-key
 
 `GOOGLE_API_KEY` also works if you prefer that variable name. The app uses `gemini-embedding-001` with `outputDimensionality: 1536`, so it can use the existing Supabase `embedding vector(1536)` schema.
 
-`SUPABASE_SERVICE_ROLE_KEY` is required by the server API routes for document inserts, deletes, storage access, and vector search. Keep it server-only; never prefix it with `NEXT_PUBLIC_`.
+`SUPABASE_SERVICE_ROLE_KEY` is required by the server API routes for experience ingestion, deletes, private storage access, and vector search. Keep it server-only; never prefix it with `NEXT_PUBLIC_`.
 
 For more reliable PDF parsing, install Poppler and expose its `pdftotext` binary. If it is not on `PATH`, set:
 
@@ -32,10 +32,8 @@ GEMINI_GENERATION_MODEL=gemini-flash-lite-latest
 
 ## Evidence Index
 
-The two document models coexist:
+The evidence index is the application's only retrieval model:
 
-- `documents` and `match_documents` continue to serve generic `/api/upload`,
-  `/api/search`, and `/api/documents`. Existing rows are not migrated.
 - `parent_documents` holds project or project-section context, source file
   identity, source file name/type, and JSON metadata.
 - `document_chunks` holds exact citation text (`child_text`), contextual embedding
@@ -51,14 +49,13 @@ It creates a cosine HNSW index and maintains `updated_at` on row updates.
 The evidence tables have RLS enabled and no browser access policies. Only the
 server service role is granted table access and evidence RPC execution. Never
 call evidence helpers from client components or expose the service-role key.
-Source identifiers are text rather than a foreign key to `documents`: generic
-rows represent chunks, and several evidence parents can share one source file.
+Source identifiers are text rather than a foreign key, so several evidence
+parents can share one source file.
 
 The server helpers in `app/lib/evidenceServer.ts` insert a parent and its chunks
 atomically, embed only `embedding_text`, search via `match_document_chunks`,
 expand matched parents, and delete evidence parents. They do not perform
-structured LLM extraction, JD-fit evaluation, or route generic uploads into
-the evidence model. Metadata and embedding headers must come from the source
+structured LLM extraction or JD-fit evaluation. Metadata and embedding headers must come from the source
 or trusted user-provided fields, not invented claims.
 
 Run `supabase/checks/evidence_index.sql` in the SQL editor or via MCP
@@ -66,8 +63,20 @@ Run `supabase/checks/evidence_index.sql` in the SQL editor or via MCP
 back its own data. The corresponding rollback SQL is in
 `supabase/rollback/evidence_index.sql`; it deletes the new evidence model,
 so use it only after disabling evidence callers and confirming that no evidence
-data needs preservation. It leaves generic data, storage, and `match_documents`
-untouched.
+data needs preservation. It leaves the orphaned objects below untouched.
+
+### Orphaned generic objects
+
+The retired generic document search left three objects on the remote Supabase
+project. Nothing in the application references them, and they are kept only
+until a separately authorized decommission decides whether to drop them:
+
+- the `documents` table and its existing rows,
+- the `match_documents` RPC,
+- the `documents` storage bucket.
+
+They were created outside `supabase/migrations/`, so no migration or rollback
+script in this repository manages them.
 
 ## Getting Started
 

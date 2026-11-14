@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Lets users evaluate a pasted job description against active approved experience evidence and receive a grounded, categorical fit report without changing ingestion or generic search behavior.
+Lets users evaluate a pasted job description against active approved experience evidence and receive a grounded, categorical fit report without changing ingestion behavior.
 
 ## Requirements
 

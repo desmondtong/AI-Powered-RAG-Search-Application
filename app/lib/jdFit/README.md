@@ -53,8 +53,6 @@ Validation rules:
 | Prompt versions | fixed | `jd-fit-requirements-v1`, `jd-fit-report-v1` |
 | Validation version | fixed | `jd-fit-validation-v1` |
 
-The generic answer helper keeps its own 512-token default; JD-fit never calls it.
-
 ## API Contract
 
 Request:

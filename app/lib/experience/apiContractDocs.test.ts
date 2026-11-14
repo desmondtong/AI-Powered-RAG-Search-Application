@@ -8,7 +8,7 @@ function readExperienceReadme() {
 }
 
 describe("experience API contract documentation", () => {
-  it("documents experience endpoints, recoverable errors, and generic route separation", () => {
+  it("documents experience endpoints and recoverable errors", () => {
     const readme = readExperienceReadme();
     for (const route of [
       "POST /api/experiences",
@@ -40,10 +40,6 @@ describe("experience API contract documentation", () => {
       assert.match(readme, new RegExp(errorCode));
     }
 
-    assert.match(readme, /\/api\/upload/);
-    assert.match(readme, /\/api\/documents/);
-    assert.match(readme, /\/api\/search/);
-    assert.match(readme, /remain generic/);
     assert.match(readme, /Approved Search, Export, And Deletion Contracts/);
     assert.match(readme, /Superseded accepted revisions remain exportable before source deletion/);
     assert.match(readme, /approved search, detail, file serving, retained export, parsing, approval, and indexing still treat it as ineligible/);

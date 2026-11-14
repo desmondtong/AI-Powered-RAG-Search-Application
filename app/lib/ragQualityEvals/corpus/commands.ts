@@ -100,7 +100,7 @@ export interface ResetResult {
   manifest_removed: boolean;
 }
 
-/** Deletes every experience source in the allowed project. Generic documents are never touched. */
+/** Deletes every experience source in the allowed project. Evidence-index rows are only removed through the accepted deletion function. */
 export async function resetCorpus(context: CorpusContext): Promise<ResetResult> {
   assertLiveProject(context.env);
   assertResetAllowed(context.env);

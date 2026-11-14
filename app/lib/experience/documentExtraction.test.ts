@@ -1,14 +1,15 @@
-/* eslint-disable @typescript-eslint/no-require-imports */
 import assert from "node:assert/strict";
-import Module from "node:module";
 import { describe, it } from "node:test";
 import { gunzipSync } from "node:zlib";
+import mammoth from "mammoth";
 import {
-  buildDocumentContext,
-  extractTextFromGenericDocument,
+  extractTextWithPdf2Json,
+  extractTextWithPdftotext,
+  isLikelyGarbledPdfText,
   normalizeExtractedText,
-  splitTextIntoChunks,
 } from "../documentExtraction";
+
+// Fixture constants are also read from this file's source by crossWorkflowAcceptance.test.ts; keep their names.
 
 const DOCX_FIXTURE_BASE64 =
   "UEsDBAoAAAAIAJ0uXV3XeYTq8QAAALgBAAATAAAAW0NvbnRlbnRfVHlwZXNdLnhtbH2QzU7DMBCE730Ky9cqccoBIZSkB36OwKE8wMreJFb9J69b2rdn00KREOVozXwz62nXB+/EHjPZGDq5qhspMOhobBg7+b55ru6koALBgIsBO3lEkut+0W6OCUkwHKiTUynpXinSE3qgOiYMrAwxeyj8zKNKoLcworppmlulYygYSlXmDNkvhGgfcYCdK+LpwMr5loyOpHg4e+e6TkJKzmoorKt9ML+Kqq+SmsmThyabaMkGqa6VzOL1jh/0lSfK1qB4g1xewLNRfcRslIl65xmu/0/649o4DFbjhZ/TUo4aiXh77+qL4sGG71+06jR8/wlQSwMECgAAAAAAnS5dXQAAAAAAAAAAAAAAAAYAAABfcmVscy9QSwMECgAAAAgAnS5dXSAbhuqyAAAALgEAAAsAAABfcmVscy8ucmVsc43Puw6CMBQG4J2naM4uBQdjDIXFmLAafICmPZRGeklbL7y9HRzEODie23fyN93TzOSOIWpnGdRlBQStcFJbxeAynDZ7IDFxK/nsLDJYMELXFs0ZZ57yTZy0jyQjNjKYUvIHSqOY0PBYOo82T0YXDE+5DIp6Lq5cId1W1Y6GTwPagpAVS3rJIPSyBjIsHv/h3ThqgUcnbgZt+vHlayPLPChMDB4uSCrf7TKzQHNKuorZvgBQSwMECgAAAAAAnS5dXQAAAAAAAAAAAAAAAAUAAAB3b3JkL1BLAwQKAAAACACdLl1dYdlbBcgAAAAuAQAAEQAAAHdvcmQvZG9jdW1lbnQueG1sbU+xTgMxDN37FVb2Xg6GCp3u0gFExw6AxBoS04u42JETuPbvSYrYujy9J9vP7437c1zgByUHpknddb0CJMc+0GlSb6/P2wcFuVjydmHCSV0wq73ZjOvg2X1HpALVgfKwTmouJQ1aZzdjtLnjhFRnnyzRlirlpFcWn4Qd5lwfxEXf9/1ORxtImQ1Adf1gf2n0KpKpIA2KOSChBAdPx8d3wHMR60rNDNXyK3ejbjsN5YrppscLOiYPM9rWD5ZAePuykb8kjf03Nb9QSwECFAAKAAAACACdLl1d13mE6vEAAAC4AQAAEwAAAAAAAAAAAAAAAAAAAAAAW0NvbnRlbnRfVHlwZXNdLnhtbFBLAQIUAAoAAAAAAJ0uXV0AAAAAAAAAAAAAAAAGAAAAAAAAAAAAEAAAACIBAABfcmVscy9QSwECFAAKAAAACACdLl1dIBuG6rIAAAAuAQAACwAAAAAAAAAAAAAAAABGAQAAX3JlbHMvLnJlbHNQSwECFAAKAAAAAACdLl1dAAAAAAAAAAAAAAAABQAAAAAAAAAAABAAAAAhAgAAd29yZC9QSwECFAAKAAAACACdLl1dYdlbBcgAAAAuAQAAEQAAAAAAAAAAAAAAAABEAgAAd29yZC9kb2N1bWVudC54bWxQSwUGAAAAAAUABQAgAQAAOwMAAAAA";
@@ -127,214 +128,45 @@ V0dLHomg7J8GQkdHS0MV8D+rUM8y5dum5YFx8SL5eQNBUBhSm1KGlEKDQ5FQqLaOgpaOJkRLF6yF1EJA
 MAgEBRAV1THRBfwvnWjjoZs1AAA=
 `;
 
-interface InsertedDocumentRow {
-  content: string;
-  metadata: Record<string, unknown>;
-  embedding: string;
+function docxFixtureBuffer() {
+  return Buffer.from(DOCX_FIXTURE_BASE64, "base64");
 }
 
-interface UploadCall {
-  bucket: string;
-  path: string;
-  body: Buffer;
-  options: { contentType: string; upsert: false };
+function pdfFixtureBuffer() {
+  return gunzipSync(Buffer.from(PDF_FIXTURE_GZIP_BASE64.replace(/\s/g, ""), "base64"));
 }
 
-interface EmbeddingCall {
-  input: string;
-  taskType: string;
-}
+describe("shared document extraction helpers", () => {
+  it("normalizes line endings, trailing whitespace, and blank-line runs", () => {
+    const text = "Experience title\r\nSecond line\t \n\n\nBody\u0000";
 
-function fileFromBytes(bytes: Buffer | string, name: string, type: string) {
-  if (typeof bytes === "string") {
-    return new File([bytes], name, { type });
-  }
-
-  const arrayBuffer = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(arrayBuffer).set(bytes);
-  return new File([arrayBuffer], name, { type });
-}
-
-function docxFixtureFile() {
-  return fileFromBytes(
-    Buffer.from(DOCX_FIXTURE_BASE64, "base64"),
-    "generic.docx",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  );
-}
-
-function pdfFixtureFile() {
-  const bytes = gunzipSync(Buffer.from(PDF_FIXTURE_GZIP_BASE64.replace(/\s/g, ""), "base64"));
-  return fileFromBytes(bytes, "generic.pdf", "application/pdf");
-}
-
-function mockCompiledModule(resolvedPath: string, exports: Record<string, unknown>) {
-  const mockModule = new Module(resolvedPath);
-  mockModule.filename = resolvedPath;
-  mockModule.loaded = true;
-  mockModule.exports = exports;
-  require.cache[resolvedPath] = mockModule;
-}
-
-describe("generic document extraction utilities", () => {
-  it("extracts TXT bytes and builds the same generic document context", async () => {
-    const text = "Generic TXT title\r\nSecond line\t \n\n\nBody";
-    const extracted = await extractTextFromGenericDocument(fileFromBytes(text, "generic.txt", "text/plain"));
-
-    assert.equal(extracted, text);
-    assert.equal(normalizeExtractedText(extracted), "Generic TXT title\nSecond line\n\nBody");
-    assert.deepEqual(buildDocumentContext("generic.txt", extracted), {
-      title: "Generic TXT title",
-      subtitle: "Second line",
-      text: "File: generic.txt\nTitle: Generic TXT title\nHeader: Second line",
-    });
+    assert.equal(normalizeExtractedText(text), "Experience title\nSecond line\n\nBody");
   });
 
-  it("extracts DOCX raw text with Mammoth", async () => {
-    const extracted = await extractTextFromGenericDocument(docxFixtureFile());
+  it("extracts DOCX raw text with Mammoth, as experience extraction does", async () => {
+    const { value } = await mammoth.extractRawText({ buffer: docxFixtureBuffer() });
 
-    assert.match(extracted, /Generic DOCX extraction works\./);
-    assert.match(extracted, /Second heading line\./);
+    assert.match(value, /Generic DOCX extraction works\./);
+    assert.match(value, /Second heading line\./);
   });
 
-  it("extracts selectable PDF text through the existing PDF strategy", async () => {
-    const extracted = normalizeExtractedText(await extractTextFromGenericDocument(pdfFixtureFile()));
+  it("extracts selectable PDF text through the pdftotext-then-pdf2json strategy", async () => {
+    const buffer = pdfFixtureBuffer();
+    const extracted = normalizeExtractedText(
+      (await extractTextWithPdftotext(buffer)) || (await extractTextWithPdf2Json(buffer)),
+    );
 
     assert.match(extracted, /Generic PDF extraction works\./);
     assert.match(extracted, /Second PDF line\./);
+    assert.equal(isLikelyGarbledPdfText(extracted), false);
   });
 
-  it("rejects the same unsupported generic upload formats", async () => {
-    await assert.rejects(
-      () => extractTextFromGenericDocument(fileFromBytes("{}", "generic.json", "application/json")),
-      /Unsupported file type\. Please upload PDF, DOCX, or TXT files\./,
-    );
-  });
+  it("flags symbol-heavy, g-dominated text as garbled and leaves readable text alone", () => {
+    const garbled = `\u25a0\u25bc\u25b2\u25cf\u25cb\u2190 ${"g a g b g c ".repeat(30)}`;
+    const readable = "Built TypeScript REST APIs for a payments platform. ".repeat(10);
 
-  it("keeps generic chunking deterministic with overlap", () => {
-    const text = `${"a".repeat(780)}. ${"b".repeat(120)}.`;
-    const chunks = splitTextIntoChunks(text);
-
-    assert.equal(chunks.length, 2);
-    assert.ok(chunks[0].endsWith("."));
-    assert.ok(chunks[1].startsWith("a"));
-    assert.equal(chunks[1].includes("b".repeat(120)), true);
-  });
-});
-
-describe("generic upload route regression", () => {
-  it("preserves the public success response and inserted metadata contract", async () => {
-    const routePath = require.resolve("../../api/upload/route");
-    const geminiPath = require.resolve("../gemini");
-    const supabaseServerPath = require.resolve("../supabaseServer");
-    const previousRoute = require.cache[routePath];
-    const previousGemini = require.cache[geminiPath];
-    const previousSupabaseServer = require.cache[supabaseServerPath];
-    const uploads: UploadCall[] = [];
-    const inserts: InsertedDocumentRow[] = [];
-    const embeddingCalls: EmbeddingCall[] = [];
-
-    const mockSupabase = {
-      storage: {
-        from(bucket: string) {
-          return {
-            async upload(path: string, body: Buffer, options: { contentType: string; upsert: false }) {
-              uploads.push({ bucket, path, body, options });
-              return { data: { path }, error: null };
-            },
-            getPublicUrl(path: string) {
-              return { data: { publicUrl: `https://storage.example.test/${path}` } };
-            },
-          };
-        },
-      },
-      from(table: string) {
-        assert.equal(table, "documents");
-        return {
-          async insert(row: InsertedDocumentRow) {
-            inserts.push(row);
-            return { data: null, error: null };
-          },
-        };
-      },
-    };
-
-    delete require.cache[routePath];
-    mockCompiledModule(geminiPath, {
-      async createEmbedding(input: string, taskType: string) {
-        embeddingCalls.push({ input, taskType });
-        return Array.from({ length: 1536 }, (_, index) => index / 1536);
-      },
-    });
-    mockCompiledModule(supabaseServerPath, {
-      getSupabaseAdminClient() {
-        return mockSupabase;
-      },
-    });
-
-    try {
-      const { POST } = require(routePath) as { POST: (req: Request) => Promise<Response> };
-      const fileText = "Generic upload title\nHeader line\nBody line";
-      const formData = new FormData();
-      formData.set("file", fileFromBytes(fileText, "generic.txt", "text/plain"));
-      const response = await POST({ formData: async () => formData } as Request);
-      const body = (await response.json()) as Record<string, unknown>;
-
-      assert.equal(response.status, 200);
-      assert.deepEqual(Object.keys(body).sort(), ["chunks", "documentId", "fileName", "fileUrl", "success", "textLength"]);
-      assert.equal(body.success, true);
-      assert.equal(body.fileName, "generic.txt");
-      assert.equal(body.chunks, 1);
-      assert.equal(body.textLength, fileText.length);
-      assert.match(String(body.documentId), /^[0-9a-f-]{36}$/);
-      assert.equal(body.fileUrl, `https://storage.example.test/${body.documentId}.txt`);
-
-      assert.equal(uploads.length, 1);
-      assert.equal(uploads[0].bucket, "documents");
-      assert.equal(uploads[0].path, `${body.documentId}.txt`);
-      assert.equal(uploads[0].body.toString("utf-8"), fileText);
-      assert.deepEqual(uploads[0].options, { contentType: "text/plain", upsert: false });
-
-      assert.equal(embeddingCalls.length, 1);
-      assert.equal(embeddingCalls[0].taskType, "RETRIEVAL_DOCUMENT");
-      assert.match(embeddingCalls[0].input, /File: generic\.txt\nTitle: Generic upload title\nHeader: Header line/);
-      assert.match(embeddingCalls[0].input, /Body line/);
-
-      assert.equal(inserts.length, 1);
-      assert.equal(inserts[0].content, fileText);
-      assert.equal(JSON.parse(inserts[0].embedding).length, 1536);
-      assert.deepEqual(inserts[0].metadata, {
-        source: "generic.txt",
-        document_id: body.documentId,
-        file_name: "generic.txt",
-        file_type: "text/plain",
-        file_size: fileText.length,
-        document_title: "Generic upload title",
-        document_header: "Header line",
-        document_context: "File: generic.txt\nTitle: Generic upload title\nHeader: Header line",
-        upload_date: inserts[0].metadata.upload_date,
-        chunk_index: 0,
-        total_chunks: 1,
-        file_path: `${body.documentId}.txt`,
-        file_url: body.fileUrl,
-      });
-      assert.doesNotThrow(() => new Date(String(inserts[0].metadata.upload_date)).toISOString());
-    } finally {
-      if (previousRoute) {
-        require.cache[routePath] = previousRoute;
-      } else {
-        delete require.cache[routePath];
-      }
-      if (previousGemini) {
-        require.cache[geminiPath] = previousGemini;
-      } else {
-        delete require.cache[geminiPath];
-      }
-      if (previousSupabaseServer) {
-        require.cache[supabaseServerPath] = previousSupabaseServer;
-      } else {
-        delete require.cache[supabaseServerPath];
-      }
-    }
+    assert.equal(isLikelyGarbledPdfText(garbled), true);
+    assert.equal(isLikelyGarbledPdfText(readable), false);
+    assert.equal(isLikelyGarbledPdfText("short"), false);
   });
 });

@@ -3,11 +3,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import mammoth from "mammoth";
 import { getErrorMessage } from "./errors";
 
-const CHUNK_SIZE = 800;
-const CHUNK_OVERLAP = 100;
 const PDFTOTEXT_TIMEOUT_MS = 10000;
 const PDFTOTEXT_MAX_BUFFER = 20 * 1024 * 1024;
 const execFileAsync = promisify(execFile);
@@ -23,12 +20,6 @@ const PDFTOTEXT_COMMANDS = Array.from(
     ].filter((command): command is string => Boolean(command)),
   ),
 );
-
-export interface DocumentContext {
-  title?: string;
-  subtitle?: string;
-  text: string;
-}
 
 interface PdfTextRun {
   T?: string;
@@ -67,68 +58,6 @@ function safeDecodeURIComponent(str: string): string {
       return str;
     }
   }
-}
-
-function findChunkEnd(text: string, start: number) {
-  const maxEnd = Math.min(start + CHUNK_SIZE, text.length);
-  const minEnd = start + Math.floor(CHUNK_SIZE * 0.6);
-  const separators = ["\n\n", "\n", ". ", "? ", "! ", "; ", ", ", " "];
-
-  for (const separator of separators) {
-    const index = text.lastIndexOf(separator, maxEnd);
-    if (index >= minEnd) {
-      return index + separator.length;
-    }
-  }
-
-  return maxEnd;
-}
-
-export function splitTextIntoChunks(text: string) {
-  const trimmed = text.trim();
-  const chunks: string[] = [];
-  let start = 0;
-
-  while (start < trimmed.length) {
-    const end = findChunkEnd(trimmed, start);
-    const chunk = trimmed.slice(start, end).trim();
-
-    if (chunk) {
-      chunks.push(chunk);
-    }
-
-    if (end >= trimmed.length) {
-      break;
-    }
-
-    start = Math.max(end - CHUNK_OVERLAP, start + 1);
-  }
-
-  return chunks;
-}
-
-export function buildDocumentContext(fileName: string, text: string): DocumentContext {
-  const lines = normalizeExtractedText(text)
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const title = lines[0] || fileName;
-  const subtitle = lines.slice(1, 5).find((line) => line !== title && line.length <= 160);
-  const parts = [`File: ${fileName}`];
-
-  if (title) {
-    parts.push(`Title: ${title}`);
-  }
-
-  if (subtitle) {
-    parts.push(`Header: ${subtitle}`);
-  }
-
-  return {
-    title,
-    subtitle,
-    text: parts.join("\n"),
-  };
 }
 
 export function normalizeExtractedText(text: string) {
@@ -221,20 +150,4 @@ export async function extractTextWithPdf2Json(buffer: Buffer) {
     });
     pdfParser.parseBuffer(buffer);
   });
-}
-
-export async function extractTextFromGenericDocument(file: File): Promise<string> {
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const fileName = file.name.toLowerCase();
-
-  if (fileName.endsWith(".pdf")) {
-    return (await extractTextWithPdftotext(buffer)) || extractTextWithPdf2Json(buffer);
-  } else if (fileName.endsWith(".docx")) {
-    const result = await mammoth.extractRawText({ buffer });
-    return result.value;
-  } else if (fileName.endsWith(".txt")) {
-    return buffer.toString("utf-8");
-  } else {
-    throw new Error("Unsupported file type. Please upload PDF, DOCX, or TXT files.");
-  }
 }

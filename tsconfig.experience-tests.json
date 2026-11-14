@@ -15,7 +15,6 @@
   "include": [
     "app/lib/documentExtraction.ts",
     "app/lib/experience/**/*.ts",
-    "app/api/upload/route.ts",
     "app/api/experiences/**/*.ts"
   ]
 }

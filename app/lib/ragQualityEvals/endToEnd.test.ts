@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, it } from "node:test";
 import { RAG_EVAL_METRICS } from "./fixtureSchema";
 import { loadRagEvalFixtures } from "./fixtures";
@@ -58,13 +56,5 @@ describe("rag-eval deterministic suite, end to end", () => {
     for (const category of FINDING_CATEGORIES.filter((entry) => entry !== "run-error")) {
       assert.ok(covered.has(category), `failing example for ${category}`);
     }
-  });
-
-  it("leaves generic search untouched and independent of eval fixtures", () => {
-    const route = readFileSync(join(process.cwd(), "app/api/search/route.ts"), "utf8");
-    assert.match(route, /searchProjectEvidence|generateAnswer/);
-    assert.doesNotMatch(route, /ragQualityEvals|jdFit/);
-    const generic = readFileSync(join(process.cwd(), "app/lib/evidenceServer.ts"), "utf8");
-    assert.doesNotMatch(generic, /ragQualityEvals/);
   });
 });

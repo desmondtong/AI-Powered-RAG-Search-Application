@@ -23,7 +23,7 @@ export interface JdFitModelClient {
 
 let jdFitClient: JdFitModelClient | null = null;
 
-/** Dedicated Gemini client for JD-fit. Never shared with the generic answer helper. */
+/** Dedicated Gemini client for JD-fit; not shared with the embedding helper. */
 export function getJdFitModelClient(): JdFitModelClient {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (!apiKey) {

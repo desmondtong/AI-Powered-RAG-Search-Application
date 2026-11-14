@@ -1,10 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 
 export const GEMINI_EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || "gemini-embedding-001";
-export const GEMINI_GENERATION_MODEL = process.env.GEMINI_GENERATION_MODEL || "gemini-flash-lite-latest";
 export const EMBEDDING_DIMENSIONS = 1536;
 export const GEMINI_REQUEST_TIMEOUT_MS = readPositiveInt("GEMINI_REQUEST_TIMEOUT_MS", 20000);
-export const GEMINI_MAX_OUTPUT_TOKENS = readPositiveInt("GEMINI_MAX_OUTPUT_TOKENS", 512);
 
 type EmbeddingTaskType = "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY";
 
@@ -54,23 +52,4 @@ export async function createEmbedding(input: string, taskType: EmbeddingTaskType
   }
 
   return embedding;
-}
-
-export async function generateAnswer(query: string, context: string) {
-  const response = await getGeminiClient().models.generateContent({
-    model: GEMINI_GENERATION_MODEL,
-    contents: `Context:\n${context}\n\nQuestion:\n${query}`,
-    config: {
-      temperature: 0.2,
-      maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS,
-      automaticContinuation: false,
-      httpOptions: {
-        timeout: GEMINI_REQUEST_TIMEOUT_MS,
-      },
-      systemInstruction:
-        "You are a helpful assistant. Use the provided context to answer questions. If the answer is not in the context, say you do not know.",
-    },
-  });
-
-  return response.text || "I do not know.";
 }

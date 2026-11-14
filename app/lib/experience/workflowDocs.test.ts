@@ -41,7 +41,7 @@ describe("experience browser workflow documentation", () => {
     assert.match(reviewClient, /Index/);
     assert.match(reviewClient, /Inspect Accepted JSON/);
     assert.match(reviewClient, /Download Original/);
-    assert.match(searchPage, /fetch\("\/api\/search"/);
+    assert.match(searchPage, /<JdFitPanel \/>/);
     assert.doesNotMatch(searchPage, /\/api\/experiences/);
   });
 });

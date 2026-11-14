@@ -1,6 +1,6 @@
 # Structured Experience Contracts
 
-This module defines the runtime contract for source-grounded experience ingestion. It is intentionally separate from the generic document upload flow so generic PDF, DOCX, TXT upload and search behavior can remain unchanged.
+This module defines the runtime contract for source-grounded experience ingestion. Experience upload is the application's only document intake.
 
 ## Schema
 
@@ -32,7 +32,7 @@ Attribution is `individual`, `team`, or `unspecified`. Activity status is `compl
 
 ## Structured Generation
 
-Structured parsing uses [structuredGeneration.ts](./structuredGeneration.ts), not the generic `generateAnswer` helper. The dedicated helper uses `@google/genai` with JSON response MIME, the structured response schema, low temperature, disabled automatic continuation, and separate provenance/configuration defaults:
+Structured parsing uses [structuredGeneration.ts](./structuredGeneration.ts), a dedicated helper rather than the shared embedding module. It uses `@google/genai` with JSON response MIME, the structured response schema, low temperature, disabled automatic continuation, and separate provenance/configuration defaults:
 
 | Setting | Default |
 | --- | --- |
@@ -70,7 +70,7 @@ Revision statuses are `draft`, `approved`, `indexing`, `indexed`, and `failed`; 
 
 ## Approved Search, Export, And Deletion Contracts
 
-Downstream JD-fit and evaluation code must use the ingestion-owned approved-search helper/RPC, not the generic `/api/search` route or unfiltered evidence helpers. Approved search admits only nondeleted sources whose `active_revision_id` points to an indexed revision with frozen approved JSON and publication mappings. Optional source selection is applied before ranking; an omitted selection searches all eligible experience sources, an explicit empty selection returns no matches, and unknown, deleted, draft-only, failed, or superseded selections return an eligibility error instead of widening the search.
+Downstream JD-fit and evaluation code must use the ingestion-owned approved-search helper/RPC, not unfiltered evidence helpers. Approved search admits only nondeleted sources whose `active_revision_id` points to an indexed revision with frozen approved JSON and publication mappings. Optional source selection is applied before ranking; an omitted selection searches all eligible experience sources, an explicit empty selection returns no matches, and unknown, deleted, draft-only, failed, or superseded selections return an eligibility error instead of widening the search.
 
 Search results carry parent expansion plus source, revision, logical experience, logical evidence, logical chunk, and retained source-span lineage. JD-fit can use that lineage to cite retrieved evidence, but it must not treat generated summaries, parent headers, or physical vector UUIDs as citation anchors.
 
@@ -118,7 +118,7 @@ The original deployment order is listed below for traceability. These migrations
 12. `20261029082531_delete_experience_source.sql`
 13. `20261029100522_experience_index_execution_fencing.sql`
 
-The experience migrations add registry, snapshot, revision, publication-mapping, staging, private storage, and execution-lease state. They do not change the generic `documents` table, the generic `documents` storage bucket, the generic upload/search routes, or the existing foundation RPC signatures.
+The experience migrations add registry, snapshot, revision, publication-mapping, staging, private storage, and execution-lease state. They do not change the existing foundation RPC signatures. Pre-existing objects outside these migrations are listed in the root README's note on orphaned objects.
 
 The private original-file bucket is `experience-sources` with `public = false`. Server helpers reserve sources by original byte SHA-256, upload with `upsert: false`, then reconcile `storage_uploaded_at` only after storage confirms the object was written or already exists. The helper returns the private bucket/path and never returns a permanent public URL.
 
@@ -146,11 +146,11 @@ Publication requires `p_execution_token` as its final RPC argument. Missing, exp
 
 ## Experience API Contract
 
-All experience routes are separate from generic document routes. `POST`, `PATCH`, and other mutation routes reject cross-origin browser requests before service-role work. Private source-file reads also enforce the trusted read boundary and return `Cache-Control: private, no-store`; they do not create permanent public storage URLs.
+`POST`, `PATCH`, and other mutation routes reject cross-origin browser requests before service-role work. Private source-file reads also enforce the trusted read boundary and return `Cache-Control: private, no-store`; they do not create permanent public storage URLs.
 
 | Route | Payload | Success | Notes |
 | --- | --- | --- | --- |
-| `POST /api/experiences` | `multipart/form-data` with `file` | `201`, `{ source, upload_state, next_action }` | Creates or reconciles a private source. Does not create generic chunks. |
+| `POST /api/experiences` | `multipart/form-data` with `file` | `201`, `{ source, upload_state, next_action }` | Creates or reconciles a private source. Does not create evidence chunks until indexing. |
 | `GET /api/experiences` | none | `{ sources }` | Lists durable workflow state and available actions. |
 | `GET /api/experiences/[id]` | none | `{ source, latest_extraction, latest_revision, revisions }` | Returns retained status for review/resume. |
 | `POST /api/experiences/[id]/extract` | none | `{ status: "extracted", extraction, next_action: "parse" }` | Requires an execution lease and retained private source. |
@@ -177,13 +177,13 @@ Recoverable API errors use stable codes. Validation failures use `draft-validati
 
 Both early and publication-time outdated indexing requests return HTTP `409`, `index-candidate-stale`, and `details.recoverable_action: "refresh-source"`. Other execution/publication conflicts keep their own classification; SQLSTATE `40001` alone does not mean the candidate is stale. An unconfirmed publication response returns `index-publication-response-invalid` rather than claiming success.
 
-The generic routes `/api/upload`, `/api/documents`, and `/api/search` remain generic. Experience upload, review, approval, retained export, and file serving must call only `/api/experiences...` routes.
+Experience upload, review, approval, retained export, and file serving must call only `/api/experiences...` routes.
 
 ## Browser Workflow And Correction Policy
 
 Use a small synthetic two-project file for browser workflow checks, for example one DOCX/PDF source with paragraphs for `Project Atlas` and `Project Beacon`, plus one unassigned note such as contact details. The expected browser path is:
 
-1. Open `/documents`, use the Experience section, and upload the source through `POST /api/experiences`; the Generic Documents section and `/api/upload` remain separate.
+1. Open `/documents`, use the Experience section, and upload the source through `POST /api/experiences`.
 2. Open the source from the Experience table, run Extract when available, then Parse when available. The detail page reloads persisted source blocks, warnings, omitted-block coverage, and the latest draft from `GET /api/experiences/[id]`.
 3. Review each project separately. Edit only supported fields, evidence kind, attribution, activity status, and source spans. Remove incorrect evidence rather than saving unsupported claims.
 4. Acknowledge extraction warnings and unassigned source blocks before saving. Save uses `PATCH /api/experiences/[id]/draft` with the current draft version; validation errors must stay visible and must not approve or index the draft.
@@ -208,7 +208,7 @@ The scoped test suite includes synthetic DOCX extraction, selectable-PDF extract
 - `pdf2json`, retained as the selectable-PDF fallback when Poppler is absent.
 - Mammoth, required for DOCX text extraction.
 
-Supported experience source formats are DOCX and selectable-text PDF. Legacy binary DOC, generic TXT, OCR, scanned-only PDFs, encrypted documents, user-authored JSON, and HTML rendering of converted documents are out of scope. Users who need legacy DOC ingestion should convert the file to DOCX before upload.
+Supported experience source formats are DOCX and selectable-text PDF. Legacy binary DOC, TXT, OCR, scanned-only PDFs, encrypted documents, user-authored JSON, and HTML rendering of converted documents are out of scope. Users who need legacy DOC ingestion should convert the file to DOCX before upload.
 
 Runtime defaults are intentionally bounded:
 
@@ -228,7 +228,7 @@ supabase/checks/evidence_index.sql
 supabase/checks/experience_index_fencing.sql
 ```
 
-`experience_registry.sql` rolls back all seeded data and verifies registry tables, RLS/grants, private bucket configuration, source reservation/retry behavior, execution-token conflicts, stale-token rejection, optimistic draft saves, pointer invariants, immutable frozen content, multi-parent publication, active replacement, idempotent retries, stale publication rejection, approved-search lineage, and forced rollback of invalid publication payloads. `evidence_index.sql` verifies the generic foundation remains searchable/deletable and server-only. Run Supabase advisors after schema changes; existing foundation warnings should be reviewed separately from experience-ingestion warnings.
+`experience_registry.sql` rolls back all seeded data and verifies registry tables, RLS/grants, private bucket configuration, source reservation/retry behavior, execution-token conflicts, stale-token rejection, optimistic draft saves, pointer invariants, immutable frozen content, multi-parent publication, active replacement, idempotent retries, stale publication rejection, approved-search lineage, and forced rollback of invalid publication payloads. `evidence_index.sql` verifies the evidence-index foundation remains searchable/deletable and server-only. Run Supabase advisors after schema changes; existing foundation warnings should be reviewed separately from experience-ingestion warnings.
 
 The current `@supabase/supabase-js` version expects Node 22+ for native WebSocket support in direct Node scripts. Use the project runtime's supported Node version, or provide the documented Supabase realtime transport option before running live storage smoke scripts under older Node.
 
@@ -260,6 +260,18 @@ Repository SQL checks are `supabase/checks/experience_retry_policy.sql`, `experi
 
 Browser regressions live in [retryConflicts.browser.mjs](./retryConflicts.browser.mjs). Run against a loopback Next preview with dummy Supabase/Gemini credentials, using `EXPERIENCE_PREVIEW_URL` (default `http://127.0.0.1:3033`) and `PLAYWRIGHT_MODULE_PATH` when Playwright is not installed locally. The script intercepts all APIs and blocks external requests; it verifies one outdated POST and one conflict refresh, explicit retargeting only after user action, and disabled indexing after refresh failure. These fixtures do not exercise the real server or database. Application cleanup is covered by in-memory lifecycle/expiry tests and an isolated PostgREST serialization check, not a new remote API execution.
 
+### Generic search retirement browser walkthrough (2026-11-14)
+
+Recorded for `retire-generic-rag-search` against the already-running `npm run dev` server at `http://localhost:3000`, which hot-reloaded the change, using Chrome browser automation. The experience list held six synthetic `rag-eval__*` sources from the seeded eval corpus.
+
+- **Home page.** Opened `/`. The heading, the Search and Documents navigation, and the JD-fit job description input rendered directly, with no "Search documents" / "JD fit" mode switch.
+- **Documents page.** Opened `/documents`. Only the Experience section rendered, listing six sources, with its Upload Experience button. There is no Generic Documents section.
+- **Upload modal.** Opened Upload Experience. It showed the experience variant: "Select an experience file (PDF or DOCX)", "Supported: PDF, DOCX", and the private source-grounded review note. Closed it without uploading.
+- **Existing source.** Opened the indexed source `rag-eval__strong-match__lumen-freight-dispatch.docx`. Review acknowledgements, draft fields, and source blocks rendered. Inspect Accepted JSON showed the accepted revision and resolved source references. The Download Original link points to `/api/experiences/[id]/file`, which returned 200 with the DOCX content type.
+- **Network.** With request capture on, reloading `/` and `/documents` produced only `GET /api/experiences` (200, twice from the development-mode double effect). No request targeted a removed route, and the console showed no errors.
+- **Removed routes.** `GET /api/documents` returned the Next.js 404 page in the browser. `POST /api/search`, `POST /api/upload`, and `DELETE /api/documents?id=x` each returned 404.
+- **Limitations.** Download Original was verified by its link target and response status, not by saving the file. No upload, parse, approval, or indexing was performed, because those paths are unchanged and would write to the remote project.
+
 ## Synthetic Parsing Smoke
 
 For a non-network verification, run:
@@ -284,10 +296,10 @@ This smoke produces a reviewable source-linked draft only. It is not an approval
 
 Rollback is non-destructive by default:
 
-1. Disable experience UI/API entry points first; leave generic upload/search/list/detail/file/delete flows enabled.
+1. Disable experience UI/API entry points first.
 2. Stop new extraction/parsing/indexing requests and allow active leases to expire.
 3. Preserve `experience_sources`, retained source files, extraction snapshots, and approved revisions unless the user explicitly decides they are no longer needed.
-4. Remove live indexed experience publications through the coordinated deletion lifecycle once that lifecycle exists; do not delete generic foundation rows or generic `documents` data.
+4. Remove live indexed experience publications through the coordinated deletion lifecycle once that lifecycle exists; do not delete foundation evidence rows outside that lifecycle.
 5. Drop experience-only functions, tables, or the private bucket only after confirming accepted revision history and source files are intentionally discarded.
 
 The existing `supabase/rollback/evidence_index.sql` is destructive for foundation evidence and is not a routine rollback for this workflow.

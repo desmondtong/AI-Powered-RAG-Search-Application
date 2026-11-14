@@ -32,22 +32,22 @@ function setup(env: Record<string, string | undefined> = LIVE_ENV) {
   return { fake, store, context, portsCreated: () => portsCreated };
 }
 
-const genericCalls: string[] = [];
-const genericOriginals: Array<[string, unknown]> = [];
+const evidenceIndexCalls: string[] = [];
+const evidenceIndexOriginals: Array<[string, unknown]> = [];
 beforeEach(() => {
-  genericCalls.length = 0;
+  evidenceIndexCalls.length = 0;
   const target = evidenceServer as unknown as Record<string, unknown>;
   for (const name of ["insertProjectEvidence", "deleteProjectEvidence", "searchProjectEvidence"]) {
-    genericOriginals.push([name, target[name]]);
+    evidenceIndexOriginals.push([name, target[name]]);
     target[name] = () => {
-      genericCalls.push(name);
-      throw new Error("generic documents must not be touched");
+      evidenceIndexCalls.push(name);
+      throw new Error("evidence-index rows must not be touched directly");
     };
   }
 });
 afterEach(() => {
   const target = evidenceServer as unknown as Record<string, unknown>;
-  for (const [name, original] of genericOriginals.splice(0)) target[name] = original;
+  for (const [name, original] of evidenceIndexOriginals.splice(0)) target[name] = original;
 });
 
 describe("rag-eval corpus guards", () => {
@@ -223,10 +223,10 @@ describe("rag-eval corpus teardown and reset", () => {
     const fourth = await teardownCorpus(context);
     assert.equal(fourth.results[0].status, "already-deleted");
     assert.equal(fourth.manifest_removed, true);
-    assert.deepEqual(genericCalls, []);
+    assert.deepEqual(evidenceIndexCalls, []);
   });
 
-  it("reset deletes every experience source, not just the corpus, and never touches generic documents", async () => {
+  it("reset deletes every experience source, not just the corpus, and never touches the evidence index directly", async () => {
     const { fake, store, context } = setup({ ...LIVE_ENV, RAG_EVAL_ALLOW_RESET: "1" });
     await seedCorpus(context);
     fake.addExisting("someone-elses-upload.docx");
@@ -236,7 +236,7 @@ describe("rag-eval corpus teardown and reset", () => {
     assert.ok(result.results.some((entry) => entry.fixture_id === null), "non-corpus sources are deleted too");
     assert.equal(result.manifest_removed, true);
     assert.equal(store.read(), null);
-    assert.deepEqual(genericCalls, []);
+    assert.deepEqual(evidenceIndexCalls, []);
   });
 
   it("binds only experience ingestion functions in the default port", () => {

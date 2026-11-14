@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { searchApprovedExperienceEvidence } from "../experience/approvedSearch";
-import { GEMINI_MAX_OUTPUT_TOKENS } from "../gemini";
 import { JD_FIT_MAX_OUTPUT_TOKENS } from "./config";
 import { evaluateJobDescription } from "./evaluate";
 import type { JdFitSearch } from "./retrieval";
@@ -21,7 +20,7 @@ function jdFitSources() {
 }
 
 const FORBIDDEN = [
-  // generic search and its helpers
+  // retired generic search and its helpers, kept to catch reintroduction
   "generateAnswer",
   "/api/search",
   "match_documents",
@@ -61,25 +60,27 @@ describe("JD-fit isolation", () => {
     }
   });
 
-  it("imports only the approved-search helper from ingestion and nothing from the generic Gemini helper", () => {
+  it("imports only the approved-search helper from ingestion and nothing from the shared Gemini embedding helper", () => {
     for (const { file, text } of jdFitSources()) {
       const imports = [...text.matchAll(/from "([^"]+)"/g)].map((match) => match[1]);
       for (const specifier of imports) {
         if (specifier.includes("/experience/")) {
           assert.equal(specifier, "../experience/approvedSearch", `${file} imports ${specifier}`);
         }
-        assert.notEqual(specifier, "../gemini", `${file} must not import the generic Gemini helper`);
+        assert.notEqual(specifier, "../gemini", `${file} must not import the shared Gemini embedding helper`);
         assert.equal(specifier.includes("supabase"), false, `${file} must not import a Supabase client directly`);
       }
     }
   });
 
-  it("keeps the generic answer helper's defaults unchanged", () => {
-    const gemini = readFileSync(join(root, "app/lib/gemini.ts"), "utf8");
-    assert.equal(GEMINI_MAX_OUTPUT_TOKENS, 512);
+  it("finds no generic upload, search, or document route left in the app", () => {
+    for (const route of ["app/api/upload/route.ts", "app/api/search/route.ts", "app/api/documents/route.ts"]) {
+      assert.equal(existsSync(join(root, route)), false, `${route} must not exist`);
+    }
+  });
+
+  it("keeps the JD-fit output token limit on its own setting", () => {
     assert.equal(JD_FIT_MAX_OUTPUT_TOKENS, 16_384);
-    assert.match(gemini, /maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS/);
-    assert.match(gemini, /You are a helpful assistant\. Use the provided context to answer questions\./);
   });
 
   it("performs only the approved-search RPC during a full evaluation", async () => {

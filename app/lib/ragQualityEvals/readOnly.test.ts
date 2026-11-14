@@ -17,7 +17,7 @@ import { defaultLiveReadPort, runLiveRagEval } from "./live";
 import { runOfflineRagEval } from "./runner";
 import { TEST_PROJECT_REF, liveCorpusHarness, scriptedLiveDependencies } from "./testSupport";
 
-/** Every seam that could write experience, generic-document, database, or Storage state, or build a live client. */
+/** Every seam that could write experience, evidence-index, database, or Storage state, or build a live client. */
 const SPIED: Array<[string, Record<string, unknown>, string[]]> = [
   [
     "ingestion service",
@@ -37,8 +37,8 @@ const SPIED: Array<[string, Record<string, unknown>, string[]]> = [
   ["draft persistence", draftPersistence as unknown as Record<string, unknown>, ["persistExperienceDraft", "recordExperienceParseFailure"]],
   ["embedding preparation", embeddingPreparation as unknown as Record<string, unknown>, ["prepareExperienceEmbeddingBatch"]],
   ["extraction snapshot", extractionSnapshot as unknown as Record<string, unknown>, ["persistExperienceExtractionSnapshot"]],
-  ["generic documents", evidenceServer as unknown as Record<string, unknown>, ["insertProjectEvidence", "deleteProjectEvidence"]],
-  ["generic answer", gemini as unknown as Record<string, unknown>, ["generateAnswer", "createEmbedding"]],
+  ["evidence index", evidenceServer as unknown as Record<string, unknown>, ["insertProjectEvidence", "deleteProjectEvidence"]],
+  ["embedding", gemini as unknown as Record<string, unknown>, ["createEmbedding"]],
   ["JD-fit route", jdFitHttp as unknown as Record<string, unknown>, ["handleJdFitRequest"]],
   ["JD-fit live client", jdFitGeneration as unknown as Record<string, unknown>, ["getJdFitModelClient"]],
   ["database and Storage client", supabaseServer as unknown as Record<string, unknown>, ["getSupabaseAdminClient"]],

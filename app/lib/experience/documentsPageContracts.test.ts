@@ -8,23 +8,20 @@ function readDocumentsPage() {
 }
 
 describe("documents page upload contracts", () => {
-  it("keeps generic documents and experience sources in separate UI sections and APIs", () => {
+  it("shows only the Experience section, wired to the experience API and upload modal", () => {
     const page = readDocumentsPage();
 
-    assert.match(page, /Generic Documents/);
     assert.match(page, /Experience/);
-    assert.match(page, /fetch\("\/api\/documents"\)/);
     assert.match(page, /fetch\("\/api\/experiences"\)/);
     assert.match(page, /kind="experience"/);
-    assert.match(page, /onUploadSuccess=\{fetchDocuments\}/);
     assert.match(page, /onUploadSuccess=\{fetchExperienceSources\}/);
   });
 
-  it("preserves generic document preview, download, and delete routes", () => {
+  it("has no generic document section, route, preview modal, or fetch", () => {
     const page = readDocumentsPage();
 
-    assert.match(page, /\/api\/documents\?id=\$\{doc\.id\}&file=true&view=true/);
-    assert.match(page, /\/api\/documents\?id=\$\{doc\.id\}&file=true/);
-    assert.match(page, /fetch\(`\/api\/documents\?id=\$\{id\}`,\s*\{ method: "DELETE" \}\)/);
+    for (const retired of ["Generic Documents", "/api/documents", "PDFViewerModal", "fetchDocuments"]) {
+      assert.equal(page.includes(retired), false, `documents page must not reference ${retired}`);
+    }
   });
 });

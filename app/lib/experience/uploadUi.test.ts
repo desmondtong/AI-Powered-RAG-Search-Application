@@ -8,34 +8,33 @@ import {
 } from "./uploadUi";
 
 describe("documents upload UI contracts", () => {
-  it("keeps generic and experience upload actions scoped to their intended APIs and formats", () => {
-    const generic = getDocumentsUploadConfig("generic");
+  it("scopes the experience upload action to its API and formats", () => {
     const experience = getDocumentsUploadConfig("experience");
 
-    assert.equal(generic.endpoint, "/api/upload");
-    assert.equal(generic.accept, ".pdf,.docx,.txt");
     assert.equal(experience.endpoint, "/api/experiences");
     assert.equal(experience.accept, ".pdf,.docx");
+    assert.deepEqual(getDocumentsUploadConfig(), experience);
   });
 
-  it("interprets generic and experience upload responses without mixing contracts", () => {
-    assert.equal(isDocumentsUploadSuccess("generic", { success: true, fileName: "notes.pdf", chunks: 3 }), true);
-    assert.equal(isDocumentsUploadSuccess("generic", { source: { id: "source-1" } }), false);
+  it("interprets experience upload responses", () => {
     assert.equal(isDocumentsUploadSuccess("experience", { source: { id: "source-1", file_name: "work.docx" } }), true);
     assert.equal(isDocumentsUploadSuccess("experience", { success: true, fileName: "notes.pdf", chunks: 3 }), false);
+    assert.equal(isDocumentsUploadSuccess("experience", { source: { id: "source-1" }, error: "failed" }), false);
+    assert.equal(isDocumentsUploadSuccess("experience", null), false);
+  });
 
-    assert.match(
-      getDocumentsUploadSuccessMessage("generic", { success: true, fileName: "notes.pdf", chunks: 3 }, "fallback.pdf"),
-      /Processed 3 chunks/,
-    );
+  it("builds the next-action success message and reads error messages", () => {
     assert.match(
       getDocumentsUploadSuccessMessage(
         "experience",
         { source: { file_name: "work.docx" }, next_action: "extract" },
         "fallback.docx",
       ),
-      /Next action: extract/,
+      /Experience "work\.docx" uploaded successfully\. Next action: extract\./,
     );
+    assert.match(getDocumentsUploadSuccessMessage("experience", {}, "fallback.docx"), /"fallback\.docx".*Next action: extract/);
     assert.equal(getDocumentsUploadErrorMessage({ error: { message: "Experience source file is required." } }), "Experience source file is required.");
+    assert.equal(getDocumentsUploadErrorMessage({ error: "Bad request" }), "Bad request");
+    assert.equal(getDocumentsUploadErrorMessage(null), "Upload failed");
   });
 });

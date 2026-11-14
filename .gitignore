@@ -14,6 +14,8 @@
 /coverage
 /.experience-test-build
 /.jd-fit-test-build
+/.rag-eval-test-build
+/.rag-eval/
 /supabase/.temp/
 /supabase/.branches/
 

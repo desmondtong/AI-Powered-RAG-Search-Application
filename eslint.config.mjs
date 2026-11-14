@@ -13,6 +13,7 @@ const eslintConfig = defineConfig([
     "build/**",
     ".experience-test-build/**",
     ".jd-fit-test-build/**",
+    ".rag-eval-test-build/**",
     "next-env.d.ts",
   ]),
 ]);

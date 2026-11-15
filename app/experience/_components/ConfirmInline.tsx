@@ -60,7 +60,7 @@ export default function ConfirmInline({
             </p>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button variant="destructive" onClick={onConfirm} disabled={busy}>
+            <Button variant="destructive" onClick={onConfirm} busy={busy}>
               {confirmLabel}
             </Button>
             <Button ref={cancelRef} variant="secondary" onClick={onCancel} disabled={busy}>

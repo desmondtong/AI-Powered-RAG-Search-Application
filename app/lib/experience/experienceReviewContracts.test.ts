@@ -99,4 +99,34 @@ describe("experience review UI contracts", () => {
       assert.match(copy, escape(token));
     }
   });
+
+  it("makes evidence and span removals undoable locally, through update and with no request", () => {
+    const editor = read(EDITOR);
+    assert.match(editor, /export interface UndoToken \{\s*restore: \(\) => void;\s*\}/);
+    for (const name of ["removeEvidence", "removeEvidenceSpan"]) {
+      const start = editor.indexOf(`const ${name} = useCallback(`);
+      assert.notEqual(start, -1, name);
+      const body = editor.slice(start, editor.indexOf("\n  );", start));
+      assert.match(body, /: UndoToken \| null =>/, `${name} returns an undo token`);
+      assert.match(body, /undoable</, `${name} captures what it removes`);
+      assert.doesNotMatch(body, /fetch\(/, `${name} sends no request`);
+    }
+    const undoable = editor.slice(editor.indexOf("const undoable = useCallback("), editor.indexOf("const removeEvidence = useCallback("));
+    assert.match(undoable, /update\(\(next\) => reinsert\(/, "restore goes through update, which marks the draft dirty");
+    assert.match(undoable, /revision\.revision_id !== revisionId\) return;/, "a different draft revision discards the undo");
+    assert.doesNotMatch(undoable, /fetch\(/);
+
+    const page = read(PAGE);
+    assert.match(page, /offerUndo\(NOTICES\.evidenceRemoved, editor\.removeEvidence\(/);
+    assert.match(page, /offerUndo\(NOTICES\.spanRemoved, editor\.removeEvidenceSpan\(/);
+    assert.match(page, /action: \{ label: NOTICES\.undo, onClick: token\.restore \}/);
+  });
+
+  it("reports save, approval and indexing outcomes only after the request succeeded", () => {
+    const editor = read(EDITOR);
+    assert.match(editor, /if \(version !== null\) \{\s*await refresh\(\);\s*notice\.success\(NOTICES\.draftSaved\);/);
+    assert.match(editor, /if \(approved\) notice\.success\(NOTICES\.approved\(/);
+    const indexer = read("app/experience/[id]/_hooks/useIndexSequence.ts");
+    assert.match(indexer, /if \(stopReason === "indexed"\) \{\s*notice\.success\(NOTICES\.searchable\(/);
+  });
 });

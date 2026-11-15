@@ -1,5 +1,6 @@
 import { CheckIcon, CloseIcon } from "@/app/components/icons";
 import type { StepState, StepView } from "@/app/lib/experience/workspace/stage";
+import { Hint } from "./ui";
 
 const STATE_TEXT: Record<StepState, string> = {
   done: "done",
@@ -24,8 +25,10 @@ export function DotStepper({ steps }: { steps: StepView[] }) {
   return (
     <ol className="flex items-center gap-1.5" aria-label="Pipeline stages">
       {steps.map((step) => (
-        <li key={step.name} title={`${step.label}: ${STATE_TEXT[step.state]}`} className="flex items-center">
-          <span aria-hidden className={`block size-2.5 rounded-full ${DOT[step.state]}`} />
+        <li key={step.name} className="flex items-center">
+          <Hint label={`${step.label}: ${STATE_TEXT[step.state]}`}>
+            <span aria-hidden className={`block size-2.5 rounded-full ${DOT[step.state]}`} />
+          </Hint>
           <span className="sr-only">
             {step.label}: {STATE_TEXT[step.state]}
           </span>

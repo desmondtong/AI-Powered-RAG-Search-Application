@@ -1,12 +1,20 @@
+"use client";
+
+import { Toggle } from "@base-ui/react/toggle";
+import { ToggleGroup } from "@base-ui/react/toggle-group";
 import Link from "next/link";
+import { useState } from "react";
 import { ArrowIcon, LinkIcon, WarningIcon } from "@/app/components/icons";
-import type { JdFitAssessment, JdFitCitation, JdFitRequirement, JdFitResponse } from "@/app/lib/jdFit/contracts";
+import { Button, Disclosure } from "@/app/experience/_components/ui";
+import type { JdFitAssessment, JdFitCitation, JdFitFitLabel, JdFitRequirement, JdFitResponse } from "@/app/lib/jdFit/contracts";
 import {
   FIT_GROUP_ORDER,
   FIT_LABEL_DISPLAY,
   citationCaption,
   citationHref,
   countByFit,
+  filterAnnouncement,
+  filterGroups,
   groupAssessmentsByFit,
   reportHeaderLine,
 } from "@/app/lib/jdFit/ui";
@@ -66,33 +74,11 @@ function RequirementCard({ assessment, requirement }: { assessment: JdFitAssessm
   );
 }
 
-function GapsPanel({ report }: { report: JdFitResponse }) {
-  if (report.gaps.length === 0) return null;
-  return (
-    <section aria-labelledby="gaps-title" className="rounded-panel border border-hairline bg-card p-5">
-      <h2 id="gaps-title" className="font-heading text-headline-md text-ink">
-        {FIT_CHECK.gapsTitle(report.gaps.length)}
-      </h2>
-      <p className="mt-1 text-body-md text-ink-secondary">{FIT_CHECK.gapsNote}</p>
-      <ul className="mt-3 divide-y divide-hairline">
-        {report.gaps.map((gap) => (
-          <li key={gap.requirement_id} className="flex flex-wrap items-center gap-2 py-2 text-body-md text-ink">
-            <FitBadge fit={gap.fit} />
-            <ImportancePill importance={gap.importance} />
-            <span className="min-w-0 flex-1 break-words">{gap.text}</span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
 function Diagnostics({ report }: { report: JdFitResponse }) {
   const { diagnostics } = report;
   return (
-    <details className="rounded-panel border border-hairline bg-card p-5">
-      <summary className="cursor-pointer text-body-md font-semibold text-ink-secondary">{FIT_CHECK.diagnosticsSummary}</summary>
-      <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1 text-body-sm text-ink-secondary sm:grid-cols-2">
+    <Disclosure title={FIT_CHECK.diagnosticsSummary} className="bg-card">
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-body-sm text-ink-secondary sm:grid-cols-2">
         <dt className="text-ink-muted">Model</dt>
         <dd className="break-words">{diagnostics.model}</dd>
         <dt className="text-ink-muted">Prompt versions</dt>
@@ -112,22 +98,62 @@ function Diagnostics({ report }: { report: JdFitResponse }) {
         <dt className="text-ink-muted">Claims adjusted</dt>
         <dd>{diagnostics.validation.downgraded_claim_count}</dd>
       </dl>
-    </details>
+    </Disclosure>
   );
 }
 
-/** Header line, four count tiles, requirement cards grouped Strong → Missing, gaps and collapsed diagnostics. */
+/** Placeholders in the report's own layout while the evaluation runs. */
+export function FitReportSkeleton() {
+  return (
+    <div className="space-y-5">
+      <p className="text-body-sm text-ink-muted">Evaluating · this can take up to a minute.</p>
+      <div aria-hidden className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {FIT_GROUP_ORDER.map((fit) => (
+          <div key={fit} className={`rounded-panel border-t-4 bg-card p-4 ${FIT_LABEL_DISPLAY[fit].tileClassName}`}>
+            <div className="h-10 w-10 animate-pulse rounded-control bg-subtle motion-reduce:animate-none" />
+            <div className="mt-2 h-3 w-16 animate-pulse rounded-full bg-subtle motion-reduce:animate-none" />
+          </div>
+        ))}
+      </div>
+      <div aria-hidden className="space-y-3">
+        {[0, 1, 2].map((row) => (
+          <div key={row} className="rounded-panel border border-hairline bg-card p-4">
+            <div className="h-4 w-20 animate-pulse rounded-full bg-subtle motion-reduce:animate-none" />
+            <div className="mt-3 h-4 w-3/4 animate-pulse rounded-full bg-subtle motion-reduce:animate-none" />
+            <div className="mt-2 h-4 w-1/2 animate-pulse rounded-full bg-subtle motion-reduce:animate-none" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Header line, four pressable count tiles that filter the cards, requirement cards grouped Strong → Missing with
+ * sticky group headings, a gaps note in the Weak and Missing views, and collapsed diagnostics. Filter changes are
+ * reported through `onAnnounce`, so the panel's one status line reads them out instead of the whole card list.
+ */
 export default function FitReport({
   report,
   filesSearched,
   elapsedMs,
+  onAnnounce,
 }: {
   report: JdFitResponse;
   filesSearched: number | null;
   elapsedMs: number | null;
+  onAnnounce?: (message: string) => void;
 }) {
+  const [filter, setFilter] = useState<JdFitFitLabel | null>(null);
   const counts = countByFit(report);
-  const groups = groupAssessmentsByFit(report).filter((group) => group.items.length > 0);
+  const shown = filterGroups(groupAssessmentsByFit(report), filter).filter((group) => filter !== null || group.items.length > 0);
+  const showGapsNote = (filter === "weak" || filter === "missing") && report.gaps.length > 0;
+
+  const choose = (next: JdFitFitLabel | null) => {
+    setFilter(next);
+    onAnnounce?.(filterAnnouncement(next, next === null ? report.assessments.length : counts[next]));
+  };
+
   return (
     <div className="space-y-5">
       {report.status === "no_evidence" && (
@@ -150,30 +176,61 @@ export default function FitReport({
           </h2>
           <p className="text-body-sm text-ink-muted">{reportHeaderLine(report.requirements.length, filesSearched, elapsedMs)}</p>
         </div>
-        <ul className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Requirement counts by fit">
+        <ToggleGroup
+          value={filter ? [filter] : []}
+          onValueChange={(value) => choose((value[0] as JdFitFitLabel | undefined) ?? null)}
+          aria-label="Filter requirements by fit"
+          className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4"
+        >
           {FIT_GROUP_ORDER.map((fit) => (
-            <li key={fit} className={`rounded-panel border-t-4 bg-card p-4 shadow-raised ${FIT_LABEL_DISPLAY[fit].tileClassName}`}>
+            <Toggle
+              key={fit}
+              value={fit}
+              aria-label={`${FIT_LABEL_DISPLAY[fit].text}: ${counts[fit]}`}
+              className={`rounded-panel border-t-4 bg-card p-4 text-left shadow-raised transition-[opacity,box-shadow] hover:bg-subtle data-pressed:ring-2 data-pressed:ring-cobalt motion-reduce:transition-none ${
+                FIT_LABEL_DISPLAY[fit].tileClassName
+              } ${filter !== null && filter !== fit ? "opacity-60" : ""}`}
+            >
               <div className="font-heading text-headline-xl text-ink tabular-nums">{counts[fit]}</div>
               <div className="text-label-caps uppercase text-ink-muted">{FIT_LABEL_DISPLAY[fit].text}</div>
-            </li>
+            </Toggle>
           ))}
-        </ul>
+        </ToggleGroup>
       </section>
 
-      {groups.map((group) => (
-        <section key={group.fit} aria-labelledby={`fit-group-${group.fit}`}>
-          <h3 id={`fit-group-${group.fit}`} className="mb-2 flex items-center gap-2 text-label-caps uppercase text-ink-muted">
-            <FitBadge fit={group.fit} /> {group.items.length}
-          </h3>
-          <ol className="space-y-3">
-            {group.items.map(({ assessment, requirement }) => (
-              <RequirementCard key={assessment.requirement_id} assessment={assessment} requirement={requirement} />
-            ))}
-          </ol>
-        </section>
-      ))}
+      {showGapsNote && <p className="text-body-md text-ink-secondary">{FIT_CHECK.gapsNote}</p>}
 
-      <GapsPanel report={report} />
+      {shown.map((group) =>
+        group.items.length === 0 ? (
+          <div key={group.fit} className="flex flex-wrap items-center gap-3 rounded-panel border border-hairline bg-card p-4">
+            <p className="text-body-md text-ink-secondary">No requirements are {FIT_LABEL_DISPLAY[group.fit].text}.</p>
+            <Button variant="ghost" onClick={() => choose(null)}>
+              Show all
+            </Button>
+          </div>
+        ) : (
+          <section key={group.fit} aria-labelledby={`fit-group-${group.fit}`}>
+            {filter === null ? (
+              <h3
+                id={`fit-group-${group.fit}`}
+                className="sticky top-14 z-10 -mx-1 mb-2 flex items-center gap-2 bg-ground px-1 py-2 text-label-caps uppercase text-ink-muted"
+              >
+                <FitBadge fit={group.fit} /> {group.items.length}
+              </h3>
+            ) : (
+              <h3 id={`fit-group-${group.fit}`} className="sr-only">
+                {FIT_LABEL_DISPLAY[group.fit].text} requirements
+              </h3>
+            )}
+            <ol className="space-y-3">
+              {group.items.map(({ assessment, requirement }) => (
+                <RequirementCard key={assessment.requirement_id} assessment={assessment} requirement={requirement} />
+              ))}
+            </ol>
+          </section>
+        ),
+      )}
+
       <Diagnostics report={report} />
 
       {report.status === "no_evidence" && (

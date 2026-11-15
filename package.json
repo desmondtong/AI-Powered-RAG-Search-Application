@@ -16,6 +16,7 @@
     "rag-eval:corpus": "npm run build:rag-eval && node --env-file-if-exists=.env.local .rag-eval-test-build/app/lib/ragQualityEvals/cli/corpus.js"
   },
   "dependencies": {
+    "@base-ui/react": "1.9.0",
     "@google/genai": "^2.31.0",
     "@supabase/supabase-js": "^2.118.0",
     "mammoth": "^1.13.0",

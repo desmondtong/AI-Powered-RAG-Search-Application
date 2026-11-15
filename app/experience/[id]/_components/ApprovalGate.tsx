@@ -80,6 +80,7 @@ export default function ApprovalGate({
       <Button
         variant="primary"
         className="mt-4 w-full"
+        busy={phase !== null}
         disabled={locked || busy}
         onClick={onApprove}
         aria-describedby="approval-gate-footer"

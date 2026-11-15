@@ -10,6 +10,8 @@ import {
   citationCaption,
   citationHref,
   countByFit,
+  filterAnnouncement,
+  filterGroups,
   groupAssessmentsByFit,
   interpretJdFitResponse,
   networkErrorState,
@@ -160,6 +162,9 @@ describe("JD-fit Search page states", () => {
     const report = read("app/components/FitReport.tsx");
     for (const marker of [
       "{loading && (",
+      "<FitReportSkeleton />",
+      "busy={loading}",
+      'aria-live="polite"',
       'view.kind === "error"',
       "view.retryable",
       "Try again",
@@ -180,13 +185,44 @@ describe("JD-fit Search page states", () => {
       "citationHref(citation)",
       "Open in source",
       "RequirementCard",
-      "GapsPanel",
       "Diagnostics",
-      "<details",
+      "<Disclosure",
+      "<ToggleGroup",
+      "FIT_CHECK.gapsNote",
+      "FitReportSkeleton",
       "FIT_GROUP_ORDER.map",
       'href="/experience"',
     ]) {
       assert.ok(report.includes(marker), `report is missing ${marker}`);
     }
+  });
+
+  it("filters the report to one fit group, or shows every group when no tile is pressed", () => {
+    const groups = groupAssessmentsByFit(validResponseFixture());
+    assert.deepEqual(filterGroups(groups, null).map((group) => group.fit), ["strong", "partial", "weak", "missing"]);
+    for (const fit of FIT_GROUP_ORDER) {
+      const shown = filterGroups(groups, fit);
+      assert.deepEqual(shown.map((group) => group.fit), [fit]);
+      assert.equal(shown[0].items.length, countByFit(validResponseFixture())[fit]);
+    }
+    assert.deepEqual(filterGroups(groups, "weak")[0].items, [], "an empty group stays selectable and shows nothing");
+  });
+
+  it("announces what a filter shows", () => {
+    assert.equal(filterAnnouncement("weak", 2), "Showing 2 Weak requirements.");
+    assert.equal(filterAnnouncement("missing", 1), "Showing 1 Missing requirement.");
+    assert.equal(filterAnnouncement("partial", 0), "No requirements are Partial.");
+    assert.equal(filterAnnouncement(null, 7), "Showing all 7 requirements.");
+  });
+
+  it("has no intro paragraph or repeated indexed count, and no gaps list below the cards", () => {
+    const page = read("app/page.tsx");
+    const panel = read("app/components/JdFitPanel.tsx");
+    const report = read("app/components/FitReport.tsx");
+    assert.doesNotMatch(page, /FIT_CHECK\.intro/);
+    assert.doesNotMatch(panel, /indexed (file|files)|evaluates against/);
+    assert.doesNotMatch(report, /GapsPanel|gapsTitle|<details/);
+    assert.doesNotMatch(panel, /Reading requirements, searching your approved experience/);
+    assert.match(report, /sticky top-14/, "group headings stay visible under the top bar");
   });
 });

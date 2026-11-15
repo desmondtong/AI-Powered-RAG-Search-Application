@@ -11,7 +11,7 @@ function listSurface() {
     "app/experience/page.tsx",
     "app/experience/_components/DropZone.tsx",
     "app/experience/_components/ExperienceRow.tsx",
-    "app/experience/_components/StageLegend.tsx",
+    "app/experience/_components/HowItWorks.tsx",
   ].map((path) => ({ path, text: read(path) }));
 }
 
@@ -49,7 +49,22 @@ describe("experience list page contracts", () => {
     assert.match(row, /view\.primary/);
     assert.match(row, /<OverflowMenu/);
     assert.match(row, /<DotStepper/);
-    assert.match(read("app/experience/page.tsx"), /<StageLegend \/>/);
+  });
+
+  it("explains the six stages once, in a collapsed How it works disclosure", () => {
+    const page = read("app/experience/page.tsx");
+    assert.equal(existsSync(join(process.cwd(), "app/experience/_components/StageLegend.tsx")), false);
+    assert.equal((page.match(/<HowItWorks \/>/g) ?? []).length, 1);
+    const howItWorks = read("app/experience/_components/HowItWorks.tsx");
+    assert.match(howItWorks, /<Disclosure\b/);
+    assert.doesNotMatch(howItWorks, /defaultOpen/, "collapsed by default");
+    assert.doesNotMatch(page, /subtitle|HOW_IT_WORKS/, "no subtitle and no inline stage explanation on the page");
+  });
+
+  it("renders a row helper only when the stage view provides one", () => {
+    const row = read("app/experience/_components/ExperienceRow.tsx");
+    assert.match(row, /view\.helper &&/);
+    assert.match(row, /view\.metaFact/);
   });
 
   it("has no generic document section, route or preview", () => {

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Nunito_Sans, Source_Sans_3 } from "next/font/google";
+import { NoticeProvider } from "./components/NoticeProvider";
 import TopBar from "./components/TopBar";
 import { WorkspaceSummaryProvider } from "./components/WorkspaceSummaryProvider";
 import "./globals.css";
@@ -24,10 +25,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${headingFont.variable} ${bodyFont.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-ground text-ink font-body">
-        <WorkspaceSummaryProvider>
-          <TopBar />
-          <div className="flex-1">{children}</div>
-        </WorkspaceSummaryProvider>
+        <NoticeProvider>
+          <WorkspaceSummaryProvider>
+            <TopBar />
+            <div className="flex-1">{children}</div>
+          </WorkspaceSummaryProvider>
+        </NoticeProvider>
       </body>
     </html>
   );

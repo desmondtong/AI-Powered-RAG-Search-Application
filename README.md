@@ -4,10 +4,12 @@ A personal job-fit tool built on [Next.js](https://nextjs.org). You upload your 
 
 ## Pages
 
-The top bar has two destinations and a pill counting the files that are indexed and searchable.
+The top bar has two destinations and a pill counting the indexed files.
 
 - **Fit Check** (`/`). Paste a job description and choose "Evaluate fit". The report groups requirements as Strong, Partial, Weak or Missing and cites the exact sentence in your file for every claim. "Open in source" opens that sentence on the file's page.
-- **Experience** (`/experience`). Upload a DOCX or selectable-text PDF in the "Upload experience file" drop zone. Each file then has its own page, `/experience/[id]`, that walks it through six stages: Upload, Extract, Parse, Review, Approve and Index. Indexing starts only when you choose "Index now".
+- **Experience** (`/experience`). Upload a DOCX or selectable-text PDF in the "Upload experience file" drop zone. Each file then has its own page, `/experience/[id]`, that walks it through six stages: Upload, Extract, Parse, Review, Approve and Index. Indexing starts only when you choose "Index now". A collapsed "How it works" section on the list explains the stages.
+
+**Feedback.** A button whose request is running shows a spinner and keeps its colour; a greyed button is one you cannot use yet. When an action succeeds, a short notice appears at the bottom left for about five seconds, for example "Draft saved." or "Version 2 is searchable in Fit Check." Removing an evidence item or a source span in review can be undone from its notice. Errors never appear as notices: they stay on the page next to what failed. On the Fit Check report, the four count tiles filter the requirement cards.
 
 Bookmarks to the previous list and review URLs permanently redirect to these pages. The light and dark themes follow your operating-system setting.
 

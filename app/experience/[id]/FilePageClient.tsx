@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNotice } from "@/app/components/NoticeProvider";
 import { useWorkspaceSummary } from "@/app/components/WorkspaceSummaryProvider";
 import { ArrowIcon, BoltIcon } from "@/app/components/icons";
 import { autostartKey } from "@/app/lib/experience/uploadUi";
@@ -12,14 +13,15 @@ import {
   DELETE_CONFIRM,
   EDIT_APPROVED_NOTE,
   INDEXING,
+  NOTICES,
   PROCESSING,
   REVIEW,
+  REVIEW_GUIDANCE,
   editApprovedLabel,
   fileTypeLabel,
   formatFileSize,
   formatTimestamp,
   indexingProgress,
-  reviewGuidance,
   type ActionId,
 } from "@/app/lib/experience/workspace/copy";
 import { blockLabels, buildApprovalGate, type GateTarget } from "@/app/lib/experience/workspace/gate";
@@ -31,7 +33,8 @@ import { readApiErrorMessage, type AcceptedRevisionExport, type SourceDetail, ty
 import ConfirmInline from "../_components/ConfirmInline";
 import type { OverflowItem } from "../_components/OverflowMenu";
 import { IN_PROGRESS_STATUSES, usePolling } from "../_components/usePolling";
-import { Button, ButtonLink, Pill } from "../_components/ui";
+import { useStageTransitions } from "../_components/useStageTransitions";
+import { Button, ButtonLink, Hint, Pill } from "../_components/ui";
 import AcceptedJsonPanel from "./_components/AcceptedJsonPanel";
 import ApprovalGate from "./_components/ApprovalGate";
 import ConflictPanel from "./_components/ConflictPanel";
@@ -41,7 +44,7 @@ import ExperienceRail, { experienceAnchorId } from "./_components/ExperienceRail
 import FailureInset from "./_components/FailureInset";
 import SpanPopover, { type PopoverState } from "./_components/SpanPopover";
 import StageHeader from "./_components/StageHeader";
-import { useDraftEditor } from "./_hooks/useDraftEditor";
+import { useDraftEditor, type UndoToken } from "./_hooks/useDraftEditor";
 import { useIndexSequence } from "./_hooks/useIndexSequence";
 import { useStageRunner } from "./_hooks/useStageRunner";
 
@@ -95,13 +98,14 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
     }
   }, [sourceId, refreshSummary]);
 
-  const editor = useDraftEditor(sourceId, refresh);
+  const notice = useNotice();
+  const editor = useDraftEditor(sourceId, refresh, notice);
   useEffect(() => {
     adoptRef.current = editor.adopt;
   }, [editor.adopt]);
 
   const runner = useStageRunner(sourceId, refresh);
-  const indexing = useIndexSequence(sourceId, refresh);
+  const indexing = useIndexSequence(sourceId, refresh, notice);
 
   // A fresh upload hands over a one-time key. Read it once and remove it, so a reload never starts work again.
   const autostart = useRef<boolean | null>(null);
@@ -132,6 +136,13 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
   // Follow work running on the server while this page is not itself waiting on a request.
   const serverWorking = Boolean(detail && IN_PROGRESS_STATUSES.has(detail.source.status));
   usePolling(serverWorking && !runner.busy && !indexing.running, refresh);
+
+  // A stage change this page did not cause itself (work started elsewhere, seen by polling) gets one notice.
+  const trackedSource = useMemo(() => (detail ? [detail.source] : null), [detail]);
+  useStageTransitions(trackedSource, notice, {
+    suppress: runner.busy || indexing.running || indexing.stopReason === "indexed",
+    linkToFile: false,
+  });
 
   const [reviewing, setReviewing] = useState(false);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
@@ -281,6 +292,11 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
     documentRef.current?.focus({ preventScroll: true });
   };
 
+  /** Local removals are reported with an Undo action that lives as long as the notice. */
+  const offerUndo = (text: string, token: UndoToken | null) => {
+    if (token) notice.success(text, { action: { label: NOTICES.undo, onClick: token.restore } });
+  };
+
   const jumpTo = (target: GateTarget) => {
     if (target.kind === "evidence") scrollToId(evidenceAnchorId(target.experienceIndex, target.evidenceIndex));
     else if (target.kind === "experience") scrollToId(experienceAnchorId(target.experienceIndex));
@@ -348,6 +364,7 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
       setReviewing(true);
       await refresh();
       void refreshSummary();
+      notice.success(NOTICES.draftCreated((revisions?.latestApproved?.versionNumber ?? 0) + 1));
     } catch {
       setActionError("A new draft could not be created. Check your connection and try again.");
     } finally {
@@ -369,9 +386,12 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
       if (data?.status === "cleanup-pending") {
         await refresh();
         void refreshSummary();
+        notice.info(NOTICES.deletedPending(source?.file_name ?? "the file"));
         return;
       }
       await refreshSummary();
+      // The notice provider lives in the root layout, so this notice is still showing on the list.
+      notice.success(NOTICES.deleted(source?.file_name ?? "the file"));
       router.push("/experience");
     } catch {
       setDeleteError("The file could not be deleted. Check your connection and try again.");
@@ -465,22 +485,24 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
   const renderPrimary = (action: StageAction | null) => {
     if (runner.running) {
       return (
-        <Button variant="primary" disabled>
+        <Button variant="primary" busy>
           {runner.running === "extract" ? "Extracting…" : "Parsing…"}
         </Button>
       );
     }
     if (indexing.running) {
       return (
-        <Button variant="primary" disabled>
+        <Button variant="primary" busy>
+          <BoltIcon size={16} />
           Indexing…
         </Button>
       );
     }
     if (showReview) {
+      const saving = editor.phase === "saving";
       return (
-        <Button variant="primary" onClick={() => void editor.save()} disabled={!editor.dirty || busy}>
-          {editor.phase === "saving" ? REVIEW.saving : REVIEW.saveDraft}
+        <Button variant="primary" onClick={() => void editor.save()} busy={saving} disabled={!saving && (!editor.dirty || busy)}>
+          {saving ? REVIEW.saving : REVIEW.saveDraft}
         </Button>
       );
     }
@@ -512,9 +534,22 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
     }
     if (editVisible) {
       return (
-        <Button onClick={() => runAction("edit-approved")} disabled={busy} title={EDIT_APPROVED_NOTE}>
-          {actionBusy === "edit-approved" ? "Creating draft…" : editApprovedLabel((revisions?.latestApproved?.versionNumber ?? 0) + 1)}
-        </Button>
+        <>
+          {/* Tooltips are visual only, so the same note is the button's description for assistive technology. */}
+          <span id="edit-approved-note" className="sr-only">
+            {EDIT_APPROVED_NOTE}
+          </span>
+          <Hint label={EDIT_APPROVED_NOTE}>
+            <Button
+              onClick={() => runAction("edit-approved")}
+              busy={actionBusy === "edit-approved"}
+              disabled={busy}
+              aria-describedby="edit-approved-note"
+            >
+              {actionBusy === "edit-approved" ? "Creating draft…" : editApprovedLabel((revisions?.latestApproved?.versionNumber ?? 0) + 1)}
+            </Button>
+          </Hint>
+        </>
       );
     }
     return null;
@@ -522,22 +557,21 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
 
   const failedStep = view.steps.find((step) => step.state === "failed");
   const processing = runner.running || source.status === "extracting" || source.status === "parsing";
+  // One sentence at most: the stage helper, or the instruction for work this page itself is doing.
   const guidance = showReview
-    ? reviewGuidance(draft?.experiences.length ?? 0)
-    : processing
-      ? PROCESSING.body(source.file_name)
-      : indexing.running
-        ? INDEXING.running(revisions?.latestApproved?.versionNumber ?? null)
-        : view.tone === "failed" && view.primary
-      ? `Choose ${view.primary.label} to run this stage again.`
-      : view.helper;
+    ? REVIEW_GUIDANCE
+    : indexing.running
+      ? INDEXING.keepOpen
+      : view.tone === "failed" && view.primary
+        ? `Choose ${view.primary.label} to run this stage again.`
+        : view.helper;
 
+  // Type, size and one dated fact. The searchable version is added only when the label does not already name a version.
   const metaParts = [
     fileTypeLabel(source.file_type, source.file_name),
     formatFileSize(source.file_size),
-    revisions?.searchable ? `Searchable: ${revisions.searchable.label.toLowerCase()}` : null,
-    revisions?.latestApproved?.approvedAt ? `${revisions.latestApproved.label} approved ${revisions.latestApproved.approvedAt}` : null,
-    !revisions?.latestApproved && source.created_at ? `Uploaded ${formatTimestamp(source.created_at)}` : null,
+    revisions?.searchable && !/version \d/i.test(view.label) ? `Searchable: ${revisions.searchable.label.toLowerCase()}` : null,
+    view.metaFact ?? (source.created_at ? `Uploaded ${formatTimestamp(source.created_at)}` : null),
   ].filter(Boolean);
 
   const progress = indexing.progress;
@@ -546,7 +580,6 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
       {processing && (
         <div className="rounded-control bg-evidence-wash p-3 text-body-md text-evidence-text">
           <p className="font-semibold">{effectiveSource.status === "parsing" ? PROCESSING.parsing : PROCESSING.extracting}</p>
-          <p className="text-body-sm">{PROCESSING.leave}</p>
         </div>
       )}
       {(indexing.running || (progress && indexing.stopReason !== "indexed")) && (
@@ -566,7 +599,6 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
               <div className="h-full rounded-full bg-cobalt" style={{ width: `${Math.round((progress.prepared_chunks / progress.total_chunks) * 100)}%` }} />
             </div>
           )}
-          {indexing.running && <p className="mt-1 text-body-sm">{INDEXING.keepOpen}</p>}
         </div>
       )}
       {indexing.stopReason === "no-progress" && <p className="text-body-md text-amber-text">{INDEXING.stalled}</p>}
@@ -589,7 +621,6 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
           {actionError}
         </p>
       )}
-      {source.status === "draft" && source.active_revision_id && <p className="text-body-sm text-ink-muted">{EDIT_APPROVED_NOTE}</p>}
     </div>
   );
 
@@ -728,8 +759,10 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
                   handlers={{
                     updateExperience: editor.updateExperience,
                     updateEvidence: editor.updateEvidence,
-                    removeEvidence: editor.removeEvidence,
-                    removeEvidenceSpan: editor.removeEvidenceSpan,
+                    removeEvidence: (experienceIndex, evidenceIndex) =>
+                      offerUndo(NOTICES.evidenceRemoved, editor.removeEvidence(experienceIndex, evidenceIndex)),
+                    removeEvidenceSpan: (experienceIndex, evidenceIndex, spanIndex) =>
+                      offerUndo(NOTICES.spanRemoved, editor.removeEvidenceSpan(experienceIndex, evidenceIndex, spanIndex)),
                     showSpan,
                     selectFromSource,
                   }}

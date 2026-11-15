@@ -1,6 +1,12 @@
 /**
- * The JD Fit Check copy deck (design.md Decision 13). Components and tests read strings from here so copy changes
- * stay in one place.
+ * The JD Fit Check copy deck. Components and tests read strings from here so copy changes stay in one place.
+ *
+ * Every stage-facing string has one of four jobs (tighten-workspace-copy-and-feedback, design Decision 1):
+ * - label: names a state. Always shown.
+ * - instruction: the next step. Shown only while there is one.
+ * - fact: the one state-specific fact worth stating.
+ * - explanation: how the product works. Shown only in "How it works" and the Fit Check empty state, never in a
+ *   stage helper, row or subtitle. `EXPLANATIONS` lists them so tests can enforce that.
  */
 
 export const PRODUCT_NAME = "JD Fit Check";
@@ -15,25 +21,25 @@ export const NAV = {
 } as const;
 
 export function indexedPill(count: number): string {
-  return count === 0 ? "No files indexed yet" : `${plural(count, "file", "files")} indexed and searchable`;
+  return count === 0 ? "No files indexed" : `${plural(count, "file", "files")} indexed`;
 }
 
 export const STAGE_NAMES = ["Upload", "Extract", "Parse", "Review", "Approve", "Index"] as const;
 export type StageName = (typeof STAGE_NAMES)[number];
 
-export const STAGE_LEGEND: ReadonlyArray<{ name: StageName; description: string }> = [
-  { name: "Upload", description: "Your file is kept privately. Nothing is searchable yet." },
+/** Explanations: one sentence per stage. Rendered only by "How it works" and the Fit Check empty state. */
+export const HOW_IT_WORKS: ReadonlyArray<{ name: StageName; description: string }> = [
+  { name: "Upload", description: "Your file is kept privately and nothing is searchable yet." },
   { name: "Extract", description: "Text is pulled out and frozen as the source of every citation." },
   { name: "Parse", description: "Projects and evidence are proposed, each tied to a sentence in the text." },
-  { name: "Review", description: "You check and fix the proposal. Only what the file says can be kept." },
-  { name: "Approve", description: "The reviewed version is frozen. Later edits start a new draft." },
-  { name: "Index", description: "Embeddings are prepared and the file becomes searchable in Fit Check." },
+  { name: "Review", description: "You check and fix the proposal, keeping only what the file says." },
+  { name: "Approve", description: "The reviewed version is frozen; indexing it is a separate step you start." },
+  { name: "Index", description: "Embeddings are prepared and the file becomes searchable in Fit Check, replacing any earlier indexed version." },
 ];
 
 export const EXPERIENCE_PAGE = {
   title: "Experience",
-  subtitle: "Your uploaded files. Each one moves through six stages before Fit Check can search it.",
-  legendTitle: "The six stages",
+  howItWorks: "How it works",
   empty: "No experience files yet. Upload one to get started.",
   loadError: "Your experience files could not be loaded.",
 } as const;
@@ -41,7 +47,6 @@ export const EXPERIENCE_PAGE = {
 export const DROP_ZONE = {
   title: "Upload experience file",
   body: "Drop a DOCX or selectable-text PDF here, or browse. Max 10 MB.",
-  hint: "Uploading takes you straight to the file.",
   browse: "Browse files",
   uploading: "Uploading…",
   accept: ".pdf,.docx",
@@ -74,30 +79,92 @@ export function editApprovedLabel(nextVersion: number) {
   return `Edit · starts draft for version ${nextVersion}`;
 }
 
+/** One stage's copy. The keys carry the class: a helper is either an instruction or a fact, never both. */
+export interface StageCopy {
+  label: string;
+  instruction?: string;
+  fact?: string;
+}
+
+const LEAVE = "You can leave this page.";
+const REVIEW_INSTRUCTION = "Check each experience against the source, then approve.";
+
+function draftFact(experiences: number, evidence: number, warnings: number, unassigned: number) {
+  const found = `We found ${plural(experiences, "experience", "experiences")} and ${plural(evidence, "evidence item", "evidence items")}`;
+  const toCheck = [
+    warnings > 0 ? plural(warnings, "extraction warning", "extraction warnings") : null,
+    unassigned > 0 ? plural(unassigned, "unassigned block", "unassigned blocks") : null,
+  ].filter(Boolean);
+  return toCheck.length > 0 ? `${found}, with ${toCheck.join(" and ")} to check.` : `${found}.`;
+}
+
+/** Per-state stage copy (design Decision 2). `version` is the approved version number shown in labels. */
+export const STAGE_COPY = {
+  uploaded: { label: "Uploaded", instruction: "Continue processing to read the text." },
+  extracting: { label: "Extracting text", instruction: LEAVE },
+  extracted: { label: "Text extracted", instruction: "Continue processing to find the projects in it." },
+  parsing: { label: "Finding projects and evidence", instruction: LEAVE },
+  draftNew: (draftName: string, counts: { experiences: number; evidence: number; warnings: number; unassigned: number } | null): StageCopy =>
+    counts
+      ? { label: `${draftName} · ready for review`, fact: draftFact(counts.experiences, counts.evidence, counts.warnings, counts.unassigned) }
+      : { label: `${draftName} · ready for review`, instruction: REVIEW_INSTRUCTION },
+  draftStarted: (draftName: string): StageCopy => ({ label: `${draftName} · in review`, instruction: REVIEW_INSTRUCTION }),
+  indexedWithDraft: (version: number): StageCopy => ({
+    label: `Indexed · version ${version} · new draft in review`,
+    fact: "The indexed version stays searchable until the new draft is approved and indexed.",
+  }),
+  approved: (version: number): StageCopy => ({
+    label: `Version ${version} approved · not indexed`,
+    instruction: "Index now to make it searchable in Fit Check.",
+  }),
+  indexing: (version: number | null): StageCopy => ({
+    label: version === null ? "Indexing" : `Indexing version ${version}`,
+    instruction: "Indexing stopped part-way; continue indexing to finish.",
+  }),
+  indexed: (version: number, onPage: { experiences: number; evidence: number; since: string } | null): StageCopy => ({
+    label: `Indexed · version ${version}`,
+    fact: onPage
+      ? `${plural(onPage.experiences, "experience", "experiences")} and ${plural(onPage.evidence, "evidence item", "evidence items")}, searchable since ${onPage.since}.`
+      : undefined,
+  }),
+  failed: (stage: string): StageCopy => ({ label: `${stage} failed` }),
+  cleanupPending: { label: "Deleted · cleanup pending", instruction: "Retry cleanup to remove the stored original." },
+  unavailable: { label: "Unavailable", fact: "This file can't be worked on right now." },
+} as const;
+
+/** The review instruction, also used as the file page's guidance while the review workspace is open. */
+export const REVIEW_GUIDANCE = REVIEW_INSTRUCTION;
+
+/** Explanation sentences that must never appear in a stage helper, row or subtitle. */
+export const EXPLANATIONS: readonly string[] = [
+  ...HOW_IT_WORKS.map((stage) => stage.description),
+  "Indexing prepares embeddings",
+  "cites exact sentence spans",
+  "Nothing is searchable until you approve",
+  "Each one moves through six stages",
+];
+
 export const PROCESSING = {
-  body: (fileName: string) =>
-    `Reading the text in ${fileName}, then finding the projects and evidence in it. Usually under a minute.`,
   extracting: "Step 1 of 2 · extracting",
   parsing: "Step 2 of 2 · parsing",
-  leave: "You can leave this page. If it isn't finished when you come back, choose Continue processing.",
-  leaveList: "You can leave this page; come back and choose Continue if it stops.",
+  leave: LEAVE,
   alreadyRunning: "This stage is already running elsewhere. Showing its latest state.",
 } as const;
 
-export function parsedSummary(experiences: number, evidence: number, warnings: number, unassigned: number) {
-  return (
-    `We found ${plural(experiences, "experience", "experiences")} and ${plural(evidence, "piece", "pieces")} of evidence. ` +
-    `${plural(warnings, "extraction warning", "extraction warnings")} and ${plural(unassigned, "unassigned block", "unassigned blocks")} to look at. ` +
-    "Nothing is searchable until you approve."
-  );
-}
-
-export function reviewGuidance(experiences: number) {
-  return (
-    `Step 4 of 6 · Review. We found ${plural(experiences, "experience", "experiences")} in your file. ` +
-    "Check each one against the source, fix or remove anything that isn't supported, then approve."
-  );
-}
+/** Transient outcome notices (design Decision 5). Success and information only; errors stay on the page. */
+export const NOTICES = {
+  draftSaved: "Draft saved.",
+  approved: (version: number | null) => (version === null ? "Version approved." : `Version ${version} approved.`),
+  searchable: (version: number | null) =>
+    version === null ? "The file is searchable in Fit Check." : `Version ${version} is searchable in Fit Check.`,
+  draftCreated: (version: number) => `Draft for version ${version} created.`,
+  evidenceRemoved: "Evidence removed.",
+  spanRemoved: "Span removed.",
+  undo: "Undo",
+  uploaded: (fileName: string) => `Uploaded ${fileName}.`,
+  deleted: (fileName: string) => `Deleted ${fileName}.`,
+  deletedPending: (fileName: string) => `Deleted ${fileName}; the stored original is still to be removed.`,
+} as const;
 
 export const GATE = {
   title: "Before you can approve",
@@ -141,15 +208,6 @@ export const REVIEW = {
   noDraft: "There is no draft to review for this file.",
 } as const;
 
-export function approvedCopy(version: number) {
-  return {
-    body:
-      `Version ${version} is approved and frozen. Indexing prepares embeddings so Fit Check can search it. ` +
-      "It is the last step, and you start it. If an earlier version is indexed, it stays searchable until this one replaces it.",
-    status: `Approved version ${version} · ready for indexing`,
-  };
-}
-
 export function indexingProgress(prepared: number, total: number) {
   return `Indexing · ${prepared} of ${total} chunks prepared`;
 }
@@ -157,25 +215,8 @@ export function indexingProgress(prepared: number, total: number) {
 export const INDEXING = {
   keepOpen: "Keep this page open until it finishes.",
   stalled: "Indexing stopped making progress. Choose Continue indexing to try again.",
-  interrupted: "Indexing was interrupted. Choose Continue indexing to pick up where it stopped.",
   starting: "Indexing · preparing chunks",
-  running: (version: number | null) =>
-    `Preparing embeddings for ${version === null ? "the approved version" : `version ${version}`} so Fit Check can search it.`,
 } as const;
-
-export function indexedCopy(since: string, version: number, experiences: number, evidence: number) {
-  return {
-    body: `Searchable in Fit Check since ${since} · version ${version} · ${plural(experiences, "experience", "experiences")}, ${plural(evidence, "evidence item", "evidence items")}.`,
-    detail: `Any query against this file cites exact sentence spans from version ${version}.`,
-  };
-}
-
-export function indexedWithDraftCopy(activeVersion: number) {
-  return {
-    label: `Indexed · draft for version ${activeVersion + 1} in review`,
-    helper: `Version ${activeVersion} stays searchable until the new version is approved and indexed.`,
-  };
-}
 
 export const EDIT_APPROVED_NOTE = "Your searchable version stays unchanged until the new draft is approved and indexed.";
 
@@ -210,7 +251,6 @@ export const DELETE_CONFIRM = {
   retryBody: "The file is already not searchable. This retries removing the stored original.",
   retryConfirm: "Retry cleanup",
   cancel: "Cancel",
-  cleanupPending: "Deleted, but the stored original could not be removed yet. Retry cleanup when you can.",
 } as const;
 
 export const FAILURE = {
@@ -225,14 +265,11 @@ export const CITATION = {
 } as const;
 
 export const FIT_CHECK = {
-  title: "How well does your experience fit this role?",
-  intro:
-    "Paste a job description. Every requirement is checked against your approved, indexed experience and cited back to the exact sentence in your file.",
+  title: "Fit Check",
   emptyTitle: "Fit Check needs at least one indexed experience file",
   emptyBody:
     "Upload a DOCX or PDF that describes your projects. You'll review what we find in it, approve it, and index it. About ten minutes the first time. After that, paste any job description here.",
   emptyAction: "Upload experience file",
-  gapsTitle: (count: number) => `Gaps to address · ${count}`,
   gapsNote:
     "A gap means your indexed files don't say it, not that you can't do it. If you have done it, add it to your experience file and re-upload.",
   diagnosticsSummary: "Diagnostics · model, prompt versions, retrieval counts",

@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useState } from "react";
 import { ArrowIcon } from "@/app/components/icons";
+import { useNotice } from "@/app/components/NoticeProvider";
 import {
   ACTION_LABELS,
   DELETE_CONFIRM,
+  NOTICES,
   fileTypeLabel,
   formatFileSize,
   formatTimestamp,
@@ -35,6 +37,7 @@ export default function ExperienceRow({ source, onChanged }: { source: SourceSum
   const [confirming, setConfirming] = useState<null | "delete" | "retry-delete">(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const notice = useNotice();
 
   const remove = async () => {
     setBusy(true);
@@ -48,6 +51,8 @@ export default function ExperienceRow({ source, onChanged }: { source: SourceSum
       }
       setConfirming(null);
       await onChanged();
+      if (data?.status === "cleanup-pending") notice.info(NOTICES.deletedPending(source.file_name));
+      else notice.success(NOTICES.deleted(source.file_name));
     } catch {
       setError("The file could not be deleted. Check your connection and try again.");
     } finally {
@@ -65,7 +70,8 @@ export default function ExperienceRow({ source, onChanged }: { source: SourceSum
   }
 
   const primaryHref = view.primary?.id === "try-jd" ? "/" : view.primary?.id === "upload-different" ? "/experience" : href;
-  const meta = [fileTypeLabel(source.file_type, source.file_name), formatFileSize(source.file_size), source.updated_at ? `Updated ${formatTimestamp(source.updated_at)}` : ""]
+  const dated = view.metaFact ?? (source.updated_at ? `Updated ${formatTimestamp(source.updated_at)}` : "");
+  const meta = [fileTypeLabel(source.file_type, source.file_name), formatFileSize(source.file_size), dated]
     .filter(Boolean)
     .join(" · ");
 
@@ -81,7 +87,7 @@ export default function ExperienceRow({ source, onChanged }: { source: SourceSum
           </div>
           <p className="mt-0.5 text-body-sm text-ink-muted">{meta}</p>
           <p className={`mt-2 text-body-md font-semibold ${TONE_TEXT[view.tone]}`}>{view.label}</p>
-          <p className="text-body-sm text-ink-secondary">{view.helper}</p>
+          {view.helper && <p className="text-body-sm text-ink-secondary">{view.helper}</p>}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {view.primary?.id === "retry-delete" ? (

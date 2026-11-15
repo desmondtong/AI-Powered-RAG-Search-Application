@@ -239,3 +239,10 @@ h4 {
     color: inherit;
   }
 }
+
+/* While a notice is showing on a narrow screen it spans the bottom edge; keep the page's last line clear of it. */
+@media (max-width: 639px) {
+  body[data-notice="open"] {
+    padding-bottom: 5rem;
+  }
+}

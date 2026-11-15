@@ -17,7 +17,7 @@ describe("experience upload UI contracts", () => {
     assert.equal(experience.accept, ".pdf,.docx");
     assert.equal(experience.title, "Upload experience file");
     assert.equal(experience.body, "Drop a DOCX or selectable-text PDF here, or browse. Max 10 MB.");
-    assert.equal(experience.hint, "Uploading takes you straight to the file.");
+    assert.equal("hint" in experience, false);
     assert.deepEqual(getDocumentsUploadConfig(), experience);
   });
 

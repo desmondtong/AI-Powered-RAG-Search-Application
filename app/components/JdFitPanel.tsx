@@ -4,9 +4,9 @@ import { useRef, useState } from "react";
 import { BoltIcon, ErrorIcon, UploadIcon } from "@/app/components/icons";
 import { useWorkspaceSummary } from "@/app/components/WorkspaceSummaryProvider";
 import { ButtonLink, Button } from "@/app/experience/_components/ui";
-import { FIT_CHECK, STAGE_LEGEND } from "@/app/lib/experience/workspace/copy";
+import { FIT_CHECK, HOW_IT_WORKS } from "@/app/lib/experience/workspace/copy";
 import { JD_FIT_ENDPOINT, buildJdFitRequestBody, interpretJdFitResponse, networkErrorState, type JdFitViewState } from "@/app/lib/jdFit/ui";
-import FitReport from "./FitReport";
+import FitReport, { FitReportSkeleton } from "./FitReport";
 
 /** Shown, with the input disabled, only when the source list loaded and no file is indexed. */
 function FitEmptyState() {
@@ -20,7 +20,7 @@ function FitEmptyState() {
       </h2>
       <p className="mt-1 max-w-2xl text-body-md text-ink-secondary">{FIT_CHECK.emptyBody}</p>
       <ol className="mt-4 grid gap-2 sm:grid-cols-2">
-        {STAGE_LEGEND.map((stage, index) => (
+        {HOW_IT_WORKS.map((stage, index) => (
           <li key={stage.name} className="text-body-sm text-ink-secondary">
             <span className="font-semibold text-ink">
               {index + 1} · {stage.name}.
@@ -46,6 +46,8 @@ export default function JdFitPanel() {
   const [jdText, setJdText] = useState("");
   const [view, setView] = useState<JdFitViewState>({ kind: "idle" });
   const [run, setRun] = useState<{ filesSearched: number | null; elapsedMs: number | null }>({ filesSearched: null, elapsedMs: null });
+  // One short status line for assistive technology: evaluation progress, the result, then filter changes.
+  const [announcement, setAnnouncement] = useState("");
   const inFlight = useRef(false);
   const loading = view.kind === "loading";
   const empty = indexedCount === 0;
@@ -56,6 +58,7 @@ export default function JdFitPanel() {
     const filesSearched = indexedCount;
     const started = performance.now();
     setView({ kind: "loading" });
+    setAnnouncement("Evaluating fit.");
     try {
       const res = await fetch(JD_FIT_ENDPOINT, {
         method: "POST",
@@ -69,9 +72,12 @@ export default function JdFitPanel() {
         body = null;
       }
       setRun({ filesSearched, elapsedMs: performance.now() - started });
-      setView(interpretJdFitResponse(res.status, body));
+      const next = interpretJdFitResponse(res.status, body);
+      setView(next);
+      setAnnouncement(next.kind === "report" ? `Fit report ready · ${next.report.requirements.length} requirements.` : "");
     } catch {
       setView(networkErrorState());
+      setAnnouncement("");
     } finally {
       inFlight.current = false;
     }
@@ -83,9 +89,6 @@ export default function JdFitPanel() {
       void evaluate();
     }
   };
-
-  const scope =
-    indexedCount === null ? "evaluates against all indexed files" : `evaluates against all ${indexedCount} indexed ${indexedCount === 1 ? "file" : "files"}`;
 
   return (
     <div className="space-y-6">
@@ -107,20 +110,22 @@ export default function JdFitPanel() {
         />
         <div className="mt-3 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
           <span className="text-body-sm text-ink-muted">
-            {jdText.length.toLocaleString("en-US")} characters · {scope} · Cmd/Ctrl + Enter
+            {jdText.length.toLocaleString("en-US")} characters · Cmd/Ctrl + Enter
           </span>
-          <Button variant="primary" onClick={() => void evaluate()} disabled={empty || loading || !jdText.trim()}>
+          <Button variant="primary" onClick={() => void evaluate()} busy={loading} disabled={empty || !jdText.trim()}>
             <BoltIcon size={16} />
             {loading ? "Evaluating…" : "Evaluate fit"}
           </Button>
         </div>
       </section>
 
-      <div aria-live="polite" className="space-y-6">
+      <p aria-live="polite" className="sr-only">
+        {announcement}
+      </p>
+
+      <div className="space-y-6">
         {loading && (
-          <p className="rounded-panel border border-hairline bg-card p-5 text-body-md text-ink-secondary">
-            Reading requirements, searching your approved experience and writing the report. This can take up to a minute.
-          </p>
+          <FitReportSkeleton />
         )}
 
         {view.kind === "error" && (
@@ -138,7 +143,9 @@ export default function JdFitPanel() {
           </section>
         )}
 
-        {view.kind === "report" && <FitReport report={view.report} filesSearched={run.filesSearched} elapsedMs={run.elapsedMs} />}
+        {view.kind === "report" && (
+          <FitReport report={view.report} filesSearched={run.filesSearched} elapsedMs={run.elapsedMs} onAnnounce={setAnnouncement} />
+        )}
       </div>
     </div>
   );

@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import type { Notice } from "@/app/components/NoticeProvider";
+import { NOTICES } from "@/app/lib/experience/workspace/copy";
 import {
   cloneRevision,
   readApiErrorCode,
@@ -16,6 +18,11 @@ import {
 
 export type DraftPhase = "saving" | "approving" | null;
 
+/** Restores one local removal. A no-op once a different draft revision is loaded. */
+export interface UndoToken {
+  restore: () => void;
+}
+
 /** A request-level error with no field errors still has to show in the gate, keyed by its code. */
 function requestError(data: unknown, fallback: string): DraftFieldError {
   return { path: "", code: readApiErrorCode(data) ?? "request-failed", message: readApiErrorMessage(data, fallback) };
@@ -27,7 +34,11 @@ function requestError(data: unknown, fallback: string): DraftFieldError {
  * `{ revision_id, expected_draft_version }`, so "Save & approve" saves first and approves with the `draft_version`
  * the save returned, sending no approval when the save fails (design Decision 8).
  */
-export function useDraftEditor(sourceId: string, refresh: () => Promise<{ detail: SourceDetail | null; error: string | null }>) {
+export function useDraftEditor(
+  sourceId: string,
+  refresh: () => Promise<{ detail: SourceDetail | null; error: string | null }>,
+  notice: Notice,
+) {
   const [draft, setDraft] = useState<CanonicalRevision | null>(null);
   const [dirty, setDirty] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<DraftFieldError[]>([]);
@@ -90,12 +101,37 @@ export function useDraftEditor(sourceId: string, refresh: () => Promise<{ detail
     [updateExperience],
   );
 
+  /**
+   * Captures what a local removal took out and returns a token that puts it back at the same position through
+   * `update`, which marks the draft dirty. Nothing is sent to the server either way.
+   */
+  const undoable = useCallback(
+    <T,>(removed: T, reinsert: (next: CanonicalRevision, item: T) => void): UndoToken => {
+      const revisionId = draftRef.current?.revision.revision_id;
+      const kept = structuredClone(removed);
+      return {
+        restore: () => {
+          if (!revisionId || draftRef.current?.revision.revision_id !== revisionId) return;
+          update((next) => reinsert(next, structuredClone(kept)));
+        },
+      };
+    },
+    [update],
+  );
+
   const removeEvidence = useCallback(
-    (experienceIndex: number, evidenceIndex: number) =>
+    (experienceIndex: number, evidenceIndex: number): UndoToken | null => {
+      const item = draftRef.current?.experiences[experienceIndex]?.evidence_items[evidenceIndex];
+      if (!item) return null;
+      const token = undoable<EvidenceItem>(item, (next, restored) => {
+        next.experiences[experienceIndex]?.evidence_items.splice(evidenceIndex, 0, restored);
+      });
       updateExperience(experienceIndex, (experience) => {
         experience.evidence_items.splice(evidenceIndex, 1);
-      }),
-    [updateExperience],
+      });
+      return token;
+    },
+    [updateExperience, undoable],
   );
 
   const addEvidenceSpan = useCallback(
@@ -107,11 +143,18 @@ export function useDraftEditor(sourceId: string, refresh: () => Promise<{ detail
   );
 
   const removeEvidenceSpan = useCallback(
-    (experienceIndex: number, evidenceIndex: number, spanIndex: number) =>
+    (experienceIndex: number, evidenceIndex: number, spanIndex: number): UndoToken | null => {
+      const span = draftRef.current?.experiences[experienceIndex]?.evidence_items[evidenceIndex]?.source_refs[spanIndex];
+      if (!span) return null;
+      const token = undoable<SourceSpan>(span, (next, restored) => {
+        next.experiences[experienceIndex]?.evidence_items[evidenceIndex]?.source_refs.splice(spanIndex, 0, restored);
+      });
       updateEvidence(experienceIndex, evidenceIndex, (item) => {
         item.source_refs.splice(spanIndex, 1);
-      }),
-    [updateEvidence],
+      });
+      return token;
+    },
+    [updateEvidence, undoable],
   );
 
   /** Ticks `review_acknowledgements.warnings` or `review_acknowledgements.unassigned_blocks`. */
@@ -196,14 +239,17 @@ export function useDraftEditor(sourceId: string, refresh: () => Promise<{ detail
     setPhase("saving");
     try {
       const version = await saveRequest(draft);
-      if (version !== null) await refresh();
+      if (version !== null) {
+        await refresh();
+        notice.success(NOTICES.draftSaved);
+      }
       return version;
     } finally {
       inFlight.current = false;
       setPhase(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refresh, sourceId]);
+  }, [refresh, sourceId, notice]);
 
   /**
    * The gate button. With unsaved edits: PATCH, stop on any save error, then approve with the version the save
@@ -223,14 +269,15 @@ export function useDraftEditor(sourceId: string, refresh: () => Promise<{ detail
       }
       setPhase("approving");
       const approved = await approveRequest(draft.revision.revision_id, expectedDraftVersion);
-      await refresh();
+      const { detail } = await refresh();
+      if (approved) notice.success(NOTICES.approved(detail?.source.latest_approved_version_number ?? null));
       return approved;
     } finally {
       inFlight.current = false;
       setPhase(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refresh, sourceId]);
+  }, [refresh, sourceId, notice]);
 
   /** "Reload draft" after a stale-version error: discard local edits and take the server's current draft. */
   const reload = useCallback(async () => {

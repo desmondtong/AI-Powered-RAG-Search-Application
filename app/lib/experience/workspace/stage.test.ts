@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { toStageView, stepLine, type StageView, type StepState } from "./stage";
+import { toStageView, type StageView, type StepState } from "./stage";
 import type { CanonicalRevision, SourceDetail, SourceSummary } from "./types";
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
@@ -61,6 +61,11 @@ function draftDetail(summary: SourceSummary, draftVersion = 1): SourceDetail {
   };
 }
 
+/** The file page passes detail; a list row does not. */
+function pageDetail(summary: SourceSummary): SourceDetail {
+  return { source: summary, approved_versions: [] } as unknown as SourceDetail;
+}
+
 describe("stage view mapping", () => {
   it("uploaded: only Upload is done and Continue processing is the primary", () => {
     const view = toStageView(source("uploaded"));
@@ -68,11 +73,12 @@ describe("stage view mapping", () => {
     assert.equal(view.primary?.label, "Continue processing");
   });
 
-  it("extracting: Extract is running, nothing to click, and the helper says the user can leave", () => {
-    const view = toStageView(source("extracting"));
+  it("extracting: Extract is running, nothing to click, and the page helper says the user can leave", () => {
+    const summary = source("extracting");
+    const view = toStageView(summary, pageDetail(summary));
     assert.deepEqual(states(view), ["done", "running", "upcoming", "upcoming", "upcoming", "upcoming"]);
     assert.equal(view.primary, null);
-    assert.match(view.helper, /You can leave this page/);
+    assert.equal(view.helper, "You can leave this page.");
   });
 
   it("extracted: Extract done and Continue processing parses", () => {
@@ -82,10 +88,20 @@ describe("stage view mapping", () => {
   });
 
   it("parsing: Parse is running with no primary", () => {
-    const view = toStageView(source("parsing"));
+    const summary = source("parsing");
+    const view = toStageView(summary, pageDetail(summary));
     assert.deepEqual(states(view), ["done", "done", "running", "upcoming", "upcoming", "upcoming"]);
     assert.equal(view.primary, null);
     assert.match(view.helper, /leave this page/);
+  });
+
+  it("list rows carry no helper for running or finished work", () => {
+    for (const status of ["extracting", "parsing"]) {
+      assert.equal(toStageView(source(status)).helper, "", status);
+    }
+    const indexed = toStageView(source("indexed", { active_revision_id: R1, latest_approved_revision_id: R1, active_version_number: 1 }));
+    assert.equal(indexed.helper, "");
+    assert.match(indexed.metaFact ?? "", /^Indexed Nov 1[45], 2026/);
   });
 
   it("draft: Review is current, Start review is primary and re-parse is only in the overflow", () => {
@@ -94,11 +110,11 @@ describe("stage view mapping", () => {
     assert.deepEqual(states(view), ["done", "done", "done", "current", "upcoming", "upcoming"]);
     assert.equal(view.primary?.label, "Start review");
     assert.match(view.label, /Draft for version 1/);
-    assert.match(view.helper, /We found 2 experiences and 3 pieces of evidence\. 2 extraction warnings and 2 unassigned blocks/);
+    assert.equal(view.helper, "We found 2 experiences and 3 evidence items, with 2 extraction warnings and 2 unassigned blocks to check.");
     assert.ok(ids(view).includes("reparse"));
     assert.notEqual(view.primary?.id, "reparse");
     assert.ok(!ids(view).includes("index-now") && !ids(view).includes("continue-indexing"), "no index actions for a draft");
-    assert.equal(stepLine(view), "Step 4 of 6 · Review");
+    assert.doesNotMatch(view.helper, /Step \d of 6/);
   });
 
   it("draft that was already saved: Continue review", () => {
@@ -110,7 +126,9 @@ describe("stage view mapping", () => {
     const view = toStageView(source("approved", { latest_approved_revision_id: R1, latest_approved_version_number: 3 }));
     assert.deepEqual(states(view), ["done", "done", "done", "done", "done", "current"]);
     assert.equal(view.primary?.label, "Index now");
-    assert.equal(view.label, "Approved version 3 · ready for indexing");
+    assert.equal(view.label, "Version 3 approved · not indexed");
+    assert.equal(view.helper, "Index now to make it searchable in Fit Check.");
+    assert.match(view.metaFact ?? "", /^Approved /);
     assert.ok(ids(view).includes("edit-approved"));
     assert.ok(ids(view).includes("inspect-json"));
   });
@@ -119,7 +137,8 @@ describe("stage view mapping", () => {
     const view = toStageView(source("indexing", { latest_approved_revision_id: R1, latest_approved_version_number: 2 }));
     assert.deepEqual(states(view), ["done", "done", "done", "done", "done", "running"]);
     assert.equal(view.primary?.label, "Continue indexing");
-    assert.match(view.helper, /Keep this page open/);
+    assert.equal(view.label, "Indexing version 2");
+    assert.match(view.helper, /continue indexing to finish/);
   });
 
   it("indexed: every step done, S6 reads Indexed and Try a job description is primary", () => {
@@ -134,6 +153,15 @@ describe("stage view mapping", () => {
     assert.equal(edit?.label, "Edit · starts draft for version 3");
   });
 
+  it("indexed file page: one fact with counts and time, and the version only in the label", () => {
+    const summary = source("indexed", { active_revision_id: R1, latest_approved_revision_id: R1, active_version_number: 2, latest_approved_version_number: 2 });
+    const view = toStageView(summary, draftDetail(summary));
+    assert.equal(view.label, "Indexed · version 2");
+    assert.match(view.helper, /^2 experiences and 3 evidence items, searchable since Nov 1[45], 2026/);
+    assert.doesNotMatch(view.helper, /version/i);
+    assert.equal((view.helper.match(/searchable since/g) ?? []).length, 1);
+  });
+
   it("indexed with a newer draft: Review (new draft) is current and the searchable version is named", () => {
     const summary = source("draft", {
       active_revision_id: R1,
@@ -145,8 +173,8 @@ describe("stage view mapping", () => {
     const view = toStageView(summary, draftDetail(summary, 2));
     assert.deepEqual(states(view), ["done", "done", "done", "current", "upcoming", "upcoming"]);
     assert.equal(view.steps[3].label, "Review (new draft)");
-    assert.equal(view.label, "Indexed · draft for version 3 in review");
-    assert.match(view.helper, /Version 2 stays searchable until the new version is approved and indexed/);
+    assert.equal(view.label, "Indexed · version 2 · new draft in review");
+    assert.equal(view.helper, "The indexed version stays searchable until the new draft is approved and indexed.");
     assert.equal(view.primary?.label, "Continue review");
     assert.ok(!ids(view).includes("edit-approved"), "an open draft already exists");
   });
@@ -187,6 +215,7 @@ describe("stage view mapping", () => {
     const view = toStageView(source("cleanup-pending", { cleanup_error: { message: "Storage busy.", recoverable_action: "retry-delete" } }));
     assert.ok(states(view).every((state) => state === "neutral"));
     assert.equal(view.primary?.id, "retry-delete");
+    assert.equal(view.helper, "Storage busy.");
     assert.deepEqual(view.overflow, []);
   });
 

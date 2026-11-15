@@ -17,16 +17,20 @@ The explanation of how the six stages work SHALL appear in exactly two places: a
 - **WHEN** the Fit Check empty state is shown
 - **THEN** it explains the six stages, and this is the only explanatory text on that page
 
-### Requirement: No repeated sentences across rows
-List rows SHALL NOT carry a helper sentence that is identical across rows in the same state. A row's helper SHALL be either the next step for that file or omitted, with file-specific facts carried on the meta line.
+### Requirement: No explanatory sentences on rows
+List rows SHALL NOT carry sentences that explain the product or restate the row's label. A row's helper SHALL be omitted unless the file needs the user, in which case it states the next step, or the one fact the user needs, in one sentence. File-specific facts such as dates SHALL be carried on the meta line.
 
 #### Scenario: Several indexed files
 - **WHEN** the list shows more than one indexed file
-- **THEN** each row shows its stage label and a meta line with its own type, size and indexed date, and no explanatory sentence is repeated under each row
+- **THEN** each row shows its stage label and a meta line with its own type, size and indexed date, and no helper sentence
 
 #### Scenario: A file needs action
 - **WHEN** a row is in a state with a next step, such as a draft awaiting review
 - **THEN** its helper states that next step in one sentence
+
+#### Scenario: Work is running
+- **WHEN** a row's file is extracting or parsing
+- **THEN** the row shows its stage label and no helper sentence
 
 ### Requirement: Transient outcome notices
 Outcomes of user actions that need no decision SHALL be reported through a transient notice: one at a time, in a fixed position that does not cover the review rail, dismissed on its own after about five seconds, dismissible earlier, and able to carry one action. Errors and anything requiring a choice SHALL NOT be reported this way and SHALL stay in place.
@@ -141,8 +145,12 @@ Every experience file SHALL be presented on a six-stage stepper (Upload, Extract
 - **THEN** Upload, Extract and Parse show as done, Review shows as current, and the label describes the draft as ready for review
 
 #### Scenario: Work is in progress
-- **WHEN** a source's status is `extracting`, `parsing` or `indexing`
+- **WHEN** a source's status is `extracting` or `parsing` and its file page is open
 - **THEN** the corresponding stage shows as in progress and the helper says the user can leave the page
+
+#### Scenario: Indexing is running or was interrupted
+- **WHEN** a source's status is `indexing`
+- **THEN** the Index stage shows as in progress, and the helper says to keep the page open while this page is indexing, or to continue indexing when no sequence is running
 
 #### Scenario: A stage failed
 - **WHEN** a source's status is `failed` with a failure stage

@@ -110,3 +110,16 @@ export function countByFit(report: JdFitResponse) {
   }
   return counts;
 }
+
+/** The groups a report filter shows: every group when no tile is pressed, otherwise only the pressed fit's group. */
+export function filterGroups(groups: readonly FitGroup[], fit: JdFitFitLabel | null): FitGroup[] {
+  return fit === null ? [...groups] : groups.filter((group) => group.fit === fit);
+}
+
+/** The status line read out when a report tile is pressed or released. `count` is the number of requirements shown. */
+export function filterAnnouncement(fit: JdFitFitLabel | null, count: number): string {
+  const noun = count === 1 ? "requirement" : "requirements";
+  if (fit === null) return `Showing all ${count} ${noun}.`;
+  const label = FIT_LABEL_DISPLAY[fit].text;
+  return count === 0 ? `No requirements are ${label}.` : `Showing ${count} ${label} ${noun}.`;
+}

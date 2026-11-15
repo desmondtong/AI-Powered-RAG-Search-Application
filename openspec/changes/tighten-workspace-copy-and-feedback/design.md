@@ -39,13 +39,14 @@ Alternative considered: a one-off copy edit. Rejected because the last change al
 | State | Label | Helper | Meta line additions |
 |---|---|---|---|
 | uploaded | Uploaded | Continue processing to read the text. | Uploaded `<time>` |
-| extracting / parsing | Extracting text / Finding projects and evidence | You can leave this page. | |
+| extracting / parsing | Extracting text / Finding projects and evidence | Page: You can leave this page. Row: *(none)* | |
 | extracted | Text extracted | Continue processing to find the projects in it. | |
-| draft (new) | Draft for version N · ready for review | We found X experiences and Y evidence items. W warnings, U unassigned blocks. | |
+| draft (new) | Draft for version N · ready for review | Page: We found X experiences and Y evidence items, with W extraction warnings and U unassigned blocks to check. Row: the review instruction. | |
 | draft (started) | Draft for version N · in review | Check each experience against the source, then approve. | |
-| indexed + draft | Indexed · version N · new draft in review | Version N stays searchable until the new draft is approved and indexed. | |
-| approved | Version N approved · not indexed | Index now to make it searchable. | Approved `<time>` |
-| indexing | Indexing version N | Keep this page open until it finishes. | |
+| indexed + draft | Indexed · version N · new draft in review | The indexed version stays searchable until the new draft is approved and indexed. | |
+| approved | Version N approved · not indexed | Index now to make it searchable in Fit Check. | Approved `<time>` |
+| indexing (no sequence) | Indexing version N | Indexing stopped part-way; continue indexing to finish. | |
+| indexing (running here) | Indexing version N | Keep this page open until it finishes. | |
 | indexed (row) | Indexed · version N | *(none)* | Indexed `<time>` |
 | indexed (page) | Indexed · version N | X experiences, Y evidence items searchable since `<time>`. | Approved `<time>` |
 | failed | `<Stage>` failed | *(API message)* | |
@@ -76,10 +77,10 @@ Alternative considered: a hand-written toast. Rejected because the queue, pause-
 | Indexed | `useIndexSequence` stop reason `indexed` | Version N is searchable in Fit Check. | Try a job description → `/` |
 | Evidence removed | `useDraftEditor.removeEvidence` | Evidence removed. | Undo |
 | Span removed | `useDraftEditor.removeEvidenceSpan` | Span removed. | Undo |
-| Upload started | `DropZone.upload` after 2xx | Uploaded `<file>`. Processing starts on its page. | |
+| Upload started | `DropZone.upload` after 2xx | Uploaded `<file>`. | |
 | Draft created | `createDraftFromApproved` success | Draft for version N+1 created. | |
 | Deleted | `remove` success (list and page) | Deleted `<file>`. | |
-| Cleanup pending | `remove` success with `cleanup-pending` | Deleted `<file>`; stored original still to remove. | |
+| Cleanup pending | `remove` success with `cleanup-pending` | Deleted `<file>`; the stored original is still to be removed. | |
 | Ready for review | transition hook | `<file>` is ready for review. | Open → file page |
 | Became searchable elsewhere | transition hook | `<file>` is searchable. | Open |
 

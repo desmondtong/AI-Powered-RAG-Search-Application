@@ -3,7 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useId, useRef, useState } from "react";
 import { ErrorIcon, UploadIcon } from "@/app/components/icons";
+import { useNotice } from "@/app/components/NoticeProvider";
 import { useWorkspaceSummary } from "@/app/components/WorkspaceSummaryProvider";
+import { NOTICES } from "@/app/lib/experience/workspace/copy";
 import {
   autostartKey,
   getDocumentsUploadConfig,
@@ -22,6 +24,7 @@ export default function DropZone() {
   const config = getDocumentsUploadConfig("experience");
   const router = useRouter();
   const { refresh } = useWorkspaceSummary();
+  const notice = useNotice();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
@@ -44,6 +47,7 @@ export default function DropZone() {
         return;
       }
       void refresh();
+      notice.success(NOTICES.uploaded(file.name));
       if (shouldAutostart(body)) {
         try {
           sessionStorage.setItem(autostartKey(sourceId), "1");
@@ -88,7 +92,6 @@ export default function DropZone() {
             {config.title}
           </h2>
           <p className="text-body-md text-ink-secondary">{config.body}</p>
-          <p className="text-body-sm text-ink-muted">{config.hint}</p>
         </div>
         <input
           ref={inputRef}
@@ -99,7 +102,7 @@ export default function DropZone() {
           aria-hidden
           onChange={(event) => void upload(event.target.files?.[0])}
         />
-        <Button variant="primary" onClick={() => inputRef.current?.click()} disabled={Boolean(uploading)}>
+        <Button variant="primary" onClick={() => inputRef.current?.click()} busy={Boolean(uploading)}>
           <UploadIcon size={16} />
           {uploading ? config.uploadingLabel : config.browseLabel}
         </Button>

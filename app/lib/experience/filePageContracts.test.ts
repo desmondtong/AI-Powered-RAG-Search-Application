@@ -119,3 +119,51 @@ describe("experience file page contracts", () => {
     assert.match(page, /EDIT_APPROVED_NOTE/);
   });
 });
+
+/** Every `{ … }` body that runs when a request failed: `if (!response.ok …) {` and `catch … {` blocks. */
+function failureBlocks(source: string) {
+  const bodies: string[] = [];
+  const opener = /if \(!(?:response|res)\.ok\b[^{]*\{|catch(?:\s*\([^)]*\))?\s*\{/g;
+  for (const match of source.matchAll(opener)) {
+    const open = (match.index ?? 0) + match[0].length - 1;
+    let depth = 0;
+    for (let index = open; index < source.length; index += 1) {
+      if (source[index] === "{") depth += 1;
+      if (source[index] === "}") depth -= 1;
+      if (depth === 0) {
+        bodies.push(source.slice(open, index + 1));
+        break;
+      }
+    }
+  }
+  return bodies;
+}
+
+describe("transient notice contracts", () => {
+  const PROVIDER = "app/components/NoticeProvider.tsx";
+
+  it("mounts the notice provider once, in the root layout", () => {
+    assert.match(read("app/layout.tsx"), /<NoticeProvider>/);
+    const sources = filesUnder("app").filter((file) => file !== PROVIDER && !file.endsWith(".test.ts"));
+    const mounts = sources.filter((file) => /<NoticeProvider\b/.test(read(file)));
+    assert.deepEqual([...new Set(mounts)], ["app/layout.tsx"]);
+  });
+
+  it("offers success and info only, so an error can never become a notice", () => {
+    const provider = read(PROVIDER);
+    const shape = blockAfter(provider, "export interface Notice ");
+    assert.match(shape, /success:/);
+    assert.match(shape, /info:/);
+    assert.doesNotMatch(shape, /error|warn/i);
+    assert.match(provider, /limit=\{1\}/);
+    assert.match(provider, /timeout=\{5000\}/);
+  });
+
+  it("never raises a notice where a request failed", () => {
+    for (const file of [...filesUnder("app/experience"), ...filesUnder("app/components")]) {
+      for (const body of failureBlocks(read(file))) {
+        assert.doesNotMatch(body, /notice\.(success|info)\(/, `${file} raises a notice in a failure branch`);
+      }
+    }
+  });
+});

@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { Notice } from "@/app/components/NoticeProvider";
+import { ACTION_LABELS, NOTICES } from "@/app/lib/experience/workspace/copy";
 import { readApiErrorCode, readApiErrorMessage, type IndexProgress, type SourceDetail } from "@/app/lib/experience/workspace/types";
 
 export type IndexStopReason = "indexed" | "no-progress" | "unmounted" | "error" | "conflict" | null;
@@ -42,7 +44,7 @@ type Refresh = () => Promise<{ detail: SourceDetail | null; error: string | null
  * stops on `indexed`, an error, a 409, two responses with the same remaining count, or unmount. A 409 refreshes
  * state once and never re-sends.
  */
-export function useIndexSequence(sourceId: string, refresh: Refresh) {
+export function useIndexSequence(sourceId: string, refresh: Refresh, notice: Notice) {
   const [state, setState] = useState<IndexSequenceState>(INITIAL);
   const indexRequestInFlight = useRef(false);
   const refreshRequiredRef = useRef(false);
@@ -119,11 +121,18 @@ export function useIndexSequence(sourceId: string, refresh: Refresh) {
         indexRequestInFlight.current = false;
         if (alive.current) {
           setState((current) => ({ ...current, running: false, stopReason }));
-          if (refreshAtEnd) await refresh();
+          if (refreshAtEnd) {
+            const { detail } = await refresh();
+            if (stopReason === "indexed") {
+              notice.success(NOTICES.searchable(detail?.source.active_version_number ?? null), {
+                action: { label: ACTION_LABELS["try-jd"], href: "/" },
+              });
+            }
+          }
         }
       }
     },
-    [sourceId, refresh],
+    [sourceId, refresh, notice],
   );
 
   /** Manual refresh, the only way out of a failed post-conflict refresh. Never indexes. */

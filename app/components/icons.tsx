@@ -116,6 +116,23 @@ export function RefreshIcon(props: IconProps) {
   );
 }
 
+/** Busy indicator. Spins, and holds still when the user prefers reduced motion. */
+export function SpinnerIcon({ className = "", ...props }: IconProps) {
+  return (
+    <Icon className={`animate-spin motion-reduce:animate-none ${className}`} {...props}>
+      <path d="M12 3a9 9 0 109 9" />
+    </Icon>
+  );
+}
+
+export function ChevronIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9 6l6 6-6 6" />
+    </Icon>
+  );
+}
+
 export function BoltIcon(props: IconProps) {
   return (
     <Icon {...props}>

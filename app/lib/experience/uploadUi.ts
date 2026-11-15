@@ -7,7 +7,6 @@ export interface DocumentsUploadConfig {
   endpoint: string;
   title: string;
   body: string;
-  hint: string;
   browseLabel: string;
   uploadingLabel: string;
   accept: string;
@@ -19,7 +18,6 @@ const UPLOAD_CONFIGS: Record<DocumentsUploadKind, DocumentsUploadConfig> = {
     endpoint: "/api/experiences",
     title: DROP_ZONE.title,
     body: DROP_ZONE.body,
-    hint: DROP_ZONE.hint,
     browseLabel: DROP_ZONE.browse,
     uploadingLabel: DROP_ZONE.uploading,
     accept: DROP_ZONE.accept,

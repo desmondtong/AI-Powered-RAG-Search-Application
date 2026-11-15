@@ -6,7 +6,7 @@ import OverflowMenu, { type OverflowItem } from "../../_components/OverflowMenu"
 import { PillStepper } from "../../_components/Stepper";
 
 /**
- * One header for every stage: stepper pills, the stage label, one guidance sentence, one primary action and
+ * One header for every stage: stepper pills, the stage label, at most one guidance sentence, one primary action and
  * everything else in the overflow menu.
  */
 export default function StageHeader({
@@ -57,7 +57,7 @@ export default function StageHeader({
         <PillStepper steps={view.steps} />
       </div>
       <p className={`mt-4 text-title-sm font-semibold ${TONE_TEXT[view.tone]}`}>{label}</p>
-      <p className="mt-1 max-w-3xl text-body-md text-ink-secondary">{guidance}</p>
+      {guidance && <p className="mt-1 max-w-3xl text-body-md text-ink-secondary">{guidance}</p>}
       {detail}
     </header>
   );

@@ -1,7 +1,7 @@
 import type { ApprovedExperienceSearchResult } from "../experience/approvedSearch";
 import type { StructuredExperienceExport } from "../experience/contracts";
 import type { JdFitModelClient, JdFitModelResponse } from "../jdFit/generation";
-import type { JdFitSearch } from "../jdFit/retrieval";
+import type { JdFitLabelLookup, JdFitSearch } from "../jdFit/retrieval";
 import { jsonResponse, makeHit, scriptedSearch } from "../jdFit/testFixtures";
 import { resolvePassageAnchor } from "./anchors";
 import type { FixtureCorpus, RecordedSearchCall } from "./types";
@@ -129,6 +129,7 @@ export function offlineHitForPassage(corpus: FixtureCorpus, activeExport: Struct
 export interface OfflineFixtureDependencies {
   client: FixtureScriptedModelClient;
   search: JdFitSearch;
+  labelLookup: JdFitLabelLookup;
   now: () => number;
   model: string;
 }
@@ -137,7 +138,26 @@ export interface OfflineFixtureDependencies {
  * Deterministic dependencies for one fixture: scripted model, scripted search keyed by retrieval query (built on
  * the JD-fit test helpers), a fixed clock, and a fixed model label.
  */
-export function createOfflineDependencies(corpus: FixtureCorpus, activeExport: StructuredExperienceExport): OfflineFixtureDependencies {
+/**
+ * Citation label lookup served from synthesized exports, so offline runs never reach Supabase. Like the live lookup,
+ * it returns only the requested revisions, scoped to the requested sources.
+ */
+export function offlineLabelLookup(exports: readonly StructuredExperienceExport[]): JdFitLabelLookup {
+  return async (revisionIds, sourceIds) =>
+    exports
+      .filter((exportDoc) => revisionIds.includes(exportDoc.revision.revision.revision_id) && sourceIds.includes(exportDoc.revision.source.source_id))
+      .map((exportDoc) => ({
+        id: exportDoc.revision.revision.revision_id,
+        source_id: exportDoc.revision.source.source_id,
+        approved_json: structuredClone(exportDoc.revision),
+      }));
+}
+
+export function createOfflineDependencies(
+  corpus: FixtureCorpus,
+  activeExport: StructuredExperienceExport,
+  retainedExports: readonly StructuredExperienceExport[] = [activeExport],
+): OfflineFixtureDependencies {
   const resultsByQuery = Object.fromEntries(
     Object.entries(corpus.fixture.offline.search).map(([query, passages]) => [
       query,
@@ -147,6 +167,7 @@ export function createOfflineDependencies(corpus: FixtureCorpus, activeExport: S
   return {
     client: new FixtureScriptedModelClient(corpus.fixture.offline),
     search: scriptedSearch(resultsByQuery).search,
+    labelLookup: offlineLabelLookup(retainedExports),
     now: () => OFFLINE_CLOCK_MS,
     model: OFFLINE_MODEL,
   };

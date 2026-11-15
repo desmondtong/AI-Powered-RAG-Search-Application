@@ -3,7 +3,7 @@ import { canonicalStringify } from "../experience/contracts";
 import { JdFitError } from "../jdFit/contracts";
 import { evaluateJobDescription } from "../jdFit/evaluate";
 import type { JdFitModelClient } from "../jdFit/generation";
-import type { JdFitSearch } from "../jdFit/retrieval";
+import type { JdFitLabelLookup, JdFitSearch } from "../jdFit/retrieval";
 import { OFFLINE_CLOCK_MS, RagEvalConfigurationError, countingModelClient, createOfflineDependencies, recordingSearch } from "./adapters";
 import { identityKey } from "./anchors";
 import { buildOfflineCorpusIndex } from "./corpusIndex";
@@ -16,6 +16,8 @@ import { RAG_EVAL_RUNNER_VERSION } from "./versions";
 export interface FixtureRunDependencies {
   client: JdFitModelClient;
   search: JdFitSearch;
+  /** Citation label lookup. Offline runs must inject one; live runs default to the read-only Supabase lookup. */
+  labelLookup?: JdFitLabelLookup;
   now?: () => number;
   model?: string;
 }
@@ -42,7 +44,7 @@ async function probeSourceSelection(corpus: FixtureCorpus, dependencies: Fixture
   try {
     await evaluateJobDescription(
       { jdText: corpus.fixture.jd_text, sourceIds: [corpus.source_id] },
-      { client: counter.client, search: recorder.search, now: dependencies.now, model: dependencies.model },
+      { client: counter.client, search: recorder.search, labelLookup: dependencies.labelLookup, now: dependencies.now, model: dependencies.model },
     );
     return { rejected: false, error_code: null, search_calls: recorder.calls.length, model_calls: counter.count };
   } catch (error) {
@@ -62,7 +64,7 @@ export async function observeFixture(corpus: FixtureCorpus, dependencies: Fixtur
   try {
     const response = await evaluateJobDescription(
       { jdText: corpus.fixture.jd_text },
-      { client: dependencies.client, search: recorder.search, now: dependencies.now, model: dependencies.model },
+      { client: dependencies.client, search: recorder.search, labelLookup: dependencies.labelLookup, now: dependencies.now, model: dependencies.model },
     );
     return {
       fixture_id: corpus.fixture.fixture_id,
@@ -84,9 +86,9 @@ export async function runRagEval(input: RunRagEvalInput): Promise<RagEvalReport>
   const results: FixtureRunResult[] = [];
   for (const corpus of corpora) {
     const dependencies = input.dependenciesFor(corpus);
-    if (input.mode === "offline" && (!dependencies.client || !dependencies.search)) {
+    if (input.mode === "offline" && (!dependencies.client || !dependencies.search || !dependencies.labelLookup)) {
       throw new RagEvalConfigurationError(
-        `${corpus.fixture.fixture_id}: deterministic evaluation requires an injected model client and search; it never falls back to live services.`,
+        `${corpus.fixture.fixture_id}: deterministic evaluation requires an injected model client, search and label lookup; it never falls back to live services.`,
       );
     }
     const observation = await observeFixture(corpus, dependencies);
@@ -103,8 +105,14 @@ export async function runOfflineRagEval(fixtures: RagEvalFixture[], options: { r
     index,
     clock: () => OFFLINE_CLOCK_MS,
     runId: options.runId ?? offlineRunId(index),
-    dependenciesFor: (corpus) => createOfflineDependencies(corpus, index.revisions.get(identityKey(corpus.active))!.export),
+    dependenciesFor: (corpus) =>
+      createOfflineDependencies(corpus, index.revisions.get(identityKey(corpus.active))!.export, retainedExports(index)),
   });
+}
+
+/** Every retained revision export in the index, for the offline citation label lookup. */
+export function retainedExports(index: CorpusIndex) {
+  return [...index.revisions.values()].map((revision) => revision.export);
 }
 
 /** Offline run ID derives from the runner version and full fixture content, so identical inputs give identical IDs. */

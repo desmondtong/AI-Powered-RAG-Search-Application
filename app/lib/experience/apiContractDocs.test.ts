@@ -45,4 +45,12 @@ describe("experience API contract documentation", () => {
     assert.match(readme, /approved search, detail, file serving, retained export, parsing, approval, and indexing still treat it as ineligible/);
     assert.match(readme, /20261029082531_delete_experience_source\.sql/);
   });
+
+  it("documents the read-only approved version number fields", () => {
+    const readme = readExperienceReadme();
+    for (const field of ["active_version_number", "latest_approved_version_number", "approved_versions", "numberApprovedVersions"]) {
+      assert.match(readme, new RegExp(field));
+    }
+    assert.match(readme, /A version number is never accepted as an identifier/);
+  });
 });

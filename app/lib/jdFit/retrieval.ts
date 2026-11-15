@@ -1,5 +1,11 @@
-import { searchApprovedExperienceEvidence, type ApprovedExperienceSearchResult } from "../experience/approvedSearch";
+import {
+  readApprovedRevisionContent,
+  searchApprovedExperienceEvidence,
+  type ApprovedExperienceSearchResult,
+  type ApprovedRevisionContentRow,
+} from "../experience/approvedSearch";
 import { JD_FIT_MATCHES_PER_REQUIREMENT, JD_FIT_MATCH_THRESHOLD, JD_FIT_RETRIEVAL_CONCURRENCY } from "./config";
+import { attachCitationLabels, type EvidenceRecord } from "./context";
 import { JdFitError, type JdFitRequirement } from "./contracts";
 import type { JdFitDeadline } from "./generation";
 
@@ -64,4 +70,40 @@ export async function retrieveRequirementEvidence(input: RetrieveRequirementEvid
       });
     }
   });
+}
+
+/** Read-only lookup of approved content for revisions retrieval already returned. */
+export type JdFitLabelLookup = (revisionIds: string[], sourceIds: string[]) => Promise<ApprovedRevisionContentRow[]>;
+
+/** Calls the ingestion-owned read helper unchanged. */
+export const approvedRevisionLabelLookup: JdFitLabelLookup = (revisionIds, sourceIds) =>
+  readApprovedRevisionContent(revisionIds, sourceIds);
+
+export interface ResolveCitationLabelsInput {
+  evidence: EvidenceRecord[];
+  deadline: JdFitDeadline;
+  lookup?: JdFitLabelLookup;
+}
+
+/**
+ * Labels context evidence with experience title, type and evidence kinds from the cited revisions' approved content,
+ * in one lookup scoped to the retrieved revision and source IDs. A failed lookup leaves every citation unlabelled and
+ * the report still returns; only the overall deadline is allowed to stop the evaluation.
+ */
+export async function resolveCitationLabels(input: ResolveCitationLabelsInput): Promise<{ resolved: boolean }> {
+  if (input.evidence.length === 0) return { resolved: true };
+  const lookup = input.lookup ?? approvedRevisionLabelLookup;
+  const revisionIds = [...new Set(input.evidence.map((record) => record.hit.revision_id))];
+  const sourceIds = [...new Set(input.evidence.map((record) => record.hit.source_id))];
+  let rows: ApprovedRevisionContentRow[];
+  try {
+    rows = await input.deadline.race(lookup(revisionIds, sourceIds), "citation-labels");
+  } catch (error) {
+    if (error instanceof JdFitError && error.code === "deadline-exceeded") {
+      throw error;
+    }
+    rows = [];
+  }
+  attachCitationLabels(input.evidence, rows);
+  return { resolved: rows.length > 0 };
 }

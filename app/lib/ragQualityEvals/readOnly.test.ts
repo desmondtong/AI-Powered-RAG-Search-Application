@@ -13,6 +13,7 @@ import * as jdFitGeneration from "../jdFit/generation";
 import * as jdFitHttp from "../jdFit/http";
 import * as supabaseServer from "../supabaseServer";
 import { loadRagEvalFixtures } from "./fixtures";
+import type { ApprovedRevisionContentClient } from "../experience/approvedSearch";
 import { defaultLiveReadPort, runLiveRagEval } from "./live";
 import { runOfflineRagEval } from "./runner";
 import { TEST_PROJECT_REF, liveCorpusHarness, scriptedLiveDependencies } from "./testSupport";
@@ -84,7 +85,7 @@ describe("rag-eval read-only runner", () => {
   it("never reaches a mutation seam in live mode; only exports, source detail, and approved search are read", async () => {
     const fixtures = loadRagEvalFixtures();
     const harness = liveCorpusHarness(fixtures);
-    const scripted = scriptedLiveDependencies(fixtures);
+    const scripted = scriptedLiveDependencies(fixtures, harness.client as unknown as ApprovedRevisionContentClient);
     const report = await runLiveRagEval({
       fixtures,
       manifest: harness.manifest,
@@ -97,6 +98,7 @@ describe("rag-eval read-only runner", () => {
     assert.deepEqual(calls, []);
     assert.deepEqual(harness.client.mutations(), [], "no insert, update, upsert, delete, RPC, or Storage call on the database client");
     assert.ok(harness.client.calls.length > 0, "live mode read the retained rows");
+
     assert.ok(scripted.rpcCalls.length > 0);
     assert.deepEqual([...new Set(scripted.rpcCalls)], ["match_approved_experience_chunks"]);
   });

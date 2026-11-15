@@ -12,7 +12,7 @@ import { loadRagEvalFixtures } from "./fixtures";
 import { scoreFixture } from "./metrics";
 import { synthesizeOfflineCorpusEntry } from "./offlineExport";
 import { buildRagEvalReport, type FixtureReport } from "./report";
-import { observeFixture } from "./runner";
+import { observeFixture, retainedExports } from "./runner";
 import type { CorpusIndex, FindingCategory, FixtureCorpus, FixtureObservation } from "./types";
 
 export interface ScenarioOptions {
@@ -27,7 +27,7 @@ export async function runScenario(fixtureId: string, options: ScenarioOptions = 
   fixtures.forEach((fixture) => options.mutateFixture?.(fixture));
   const index = options.buildIndex?.(fixtures) ?? buildOfflineCorpusIndex(fixtures);
   const corpus = index.fixtures[0];
-  const deps = createOfflineDependencies(corpus, index.revisions.get(identityKey(corpus.active))!.export);
+  const deps = createOfflineDependencies(corpus, index.revisions.get(identityKey(corpus.active))!.export, retainedExports(index));
   const search = options.wrapSearch ? options.wrapSearch(deps.search, corpus, index) : deps.search;
   const observation = await observeFixture(corpus, { ...deps, search });
   options.tamper?.(observation);

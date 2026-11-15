@@ -2,30 +2,70 @@ import {
   JD_FIT_FIT_LABELS,
   JdFitErrorResponseSchema,
   JdFitResponseSchema,
+  type JdFitAssessment,
+  type JdFitCitation,
   type JdFitFitLabel,
+  type JdFitRequirement,
   type JdFitResponse,
 } from "./contracts";
 
 export const JD_FIT_ENDPOINT = "/api/jd-fit";
 
-export const FIT_LABEL_DISPLAY: Record<JdFitFitLabel, { text: string; className: string }> = {
-  strong: {
-    text: "Strong match",
-    className: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
-  },
-  partial: {
-    text: "Partial match",
-    className: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
-  },
-  weak: {
-    text: "Weak evidence",
-    className: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
-  },
-  missing: {
-    text: "No evidence",
-    className: "bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200",
-  },
+/** Report order for fit groups and tiles. */
+export const FIT_GROUP_ORDER: readonly JdFitFitLabel[] = ["strong", "partial", "weak", "missing"];
+
+/**
+ * Categorical fit labels only: no numeric score or percentage is ever shown. Classes use the Porcelain & Cobalt
+ * fit tokens, so light and dark themes are a token swap.
+ */
+export const FIT_LABEL_DISPLAY: Record<JdFitFitLabel, { text: string; className: string; tileClassName: string }> = {
+  strong: { text: "Strong", className: "bg-fit-strong-wash text-fit-strong", tileClassName: "border-fit-strong" },
+  partial: { text: "Partial", className: "bg-fit-partial-wash text-fit-partial", tileClassName: "border-fit-partial" },
+  weak: { text: "Weak", className: "bg-fit-weak-wash text-fit-weak", tileClassName: "border-fit-weak" },
+  missing: { text: "Missing", className: "bg-fit-missing-wash text-fit-missing", tileClassName: "border-fit-missing" },
 };
+
+export interface FitGroup {
+  fit: JdFitFitLabel;
+  items: Array<{ assessment: JdFitAssessment; requirement: JdFitRequirement | undefined }>;
+}
+
+/** Assessments grouped Strong, Partial, Weak, Missing, keeping report order inside each group. Empty groups are kept. */
+export function groupAssessmentsByFit(report: Pick<JdFitResponse, "assessments" | "requirements">): FitGroup[] {
+  const requirements = new Map(report.requirements.map((requirement) => [requirement.requirement_id, requirement]));
+  return FIT_GROUP_ORDER.map((fit) => ({
+    fit,
+    items: report.assessments
+      .filter((assessment) => assessment.fit === fit)
+      .map((assessment) => ({ assessment, requirement: requirements.get(assessment.requirement_id) })),
+  }));
+}
+
+/**
+ * "file name · experience title · evidence kinds". A null title reads "General experience" for general experience
+ * and is left out for a project; an empty kinds list is left out.
+ */
+export function citationCaption(
+  citation: Pick<JdFitCitation, "source_file_name" | "experience_title" | "experience_type" | "evidence_kinds">,
+): string {
+  const title = citation.experience_title ?? (citation.experience_type === "general-experience" ? "General experience" : null);
+  const kinds = citation.evidence_kinds.length > 0 ? citation.evidence_kinds.join(", ") : null;
+  return [citation.source_file_name || "Experience file", title, kinds].filter(Boolean).join(" · ");
+}
+
+/** The file page for the cited source, with the cited span and revision: `/experience/<id>?cite=<block>:<start>:<end>&rev=<rev>`. */
+export function citationHref(citation: Pick<JdFitCitation, "source_id" | "source_span" | "revision_id">): string {
+  const { block_id, start, end } = citation.source_span;
+  return `/experience/${encodeURIComponent(citation.source_id)}?cite=${encodeURIComponent(block_id)}:${start}:${end}&rev=${encodeURIComponent(citation.revision_id)}`;
+}
+
+/** "N requirements · M files searched · T s". Files are left out when the indexed count is unknown. */
+export function reportHeaderLine(requirementCount: number, filesSearched: number | null, elapsedMs: number | null): string {
+  const parts = [`${requirementCount} ${requirementCount === 1 ? "requirement" : "requirements"}`];
+  if (filesSearched !== null) parts.push(`${filesSearched} ${filesSearched === 1 ? "file" : "files"} searched`);
+  if (elapsedMs !== null && Number.isFinite(elapsedMs)) parts.push(`${(elapsedMs / 1000).toFixed(1)} s`);
+  return parts.join(" · ");
+}
 
 export type JdFitViewState =
   | { kind: "idle" }

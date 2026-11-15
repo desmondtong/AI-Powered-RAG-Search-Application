@@ -1,6 +1,13 @@
-import type { ApprovedExperienceSearchResult } from "../experience/approvedSearch";
+import type { ApprovedExperienceSearchResult, ApprovedRevisionContentRow } from "../experience/approvedSearch";
 import { JD_FIT_CONTEXT_CHARACTERS } from "./config";
-import type { JdFitCitation, JdFitRequirement } from "./contracts";
+import {
+  JD_FIT_EVIDENCE_KINDS,
+  JD_FIT_EXPERIENCE_TYPES,
+  type JdFitCitation,
+  type JdFitEvidenceKind,
+  type JdFitExperienceType,
+  type JdFitRequirement,
+} from "./contracts";
 import type { RequirementEvidence } from "./retrieval";
 
 export interface RetainedSourceSpan {
@@ -15,7 +22,25 @@ export interface EvidenceRecord {
   hit: ApprovedExperienceSearchResult;
   span: RetainedSourceSpan;
   evidenceLogicalIds: string[];
+  /** Filled after retrieval from the cited revision's approved content; absent when the lookup did not resolve. */
+  labels?: CitationLabels;
 }
+
+export interface CitationLabels {
+  experience_title: string | null;
+  experience_type: JdFitExperienceType;
+  evidence_kinds: JdFitEvidenceKind[];
+}
+
+/**
+ * Used when a citation's labels cannot be resolved. A project with a null title shows no title segment, so this
+ * fallback never presents an invented label.
+ */
+export const UNRESOLVED_CITATION_LABELS: CitationLabels = Object.freeze({
+  experience_title: null,
+  experience_type: "project",
+  evidence_kinds: [],
+}) as CitationLabels;
 
 export interface EvidenceContextStats {
   retrieved_count: number;
@@ -144,8 +169,84 @@ export function buildEvidenceContext(
   };
 }
 
+interface RevisionLabelIndex {
+  sourceId: string;
+  experiences: Map<string, { title: string | null; type: JdFitExperienceType }>;
+  evidence: Map<string, { kind: JdFitEvidenceKind; order: number }>;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function isExperienceType(value: unknown): value is JdFitExperienceType {
+  return (JD_FIT_EXPERIENCE_TYPES as readonly unknown[]).includes(value);
+}
+
+function isEvidenceKind(value: unknown): value is JdFitEvidenceKind {
+  return (JD_FIT_EVIDENCE_KINDS as readonly unknown[]).includes(value);
+}
+
+function titleValue(title: unknown): string | null {
+  const value = asRecord(title)?.value;
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+/**
+ * Indexes approved revision content by revision ID: logical experience ID to title and type, and evidence logical ID
+ * to kind and its position in the approved JSON. Malformed entries are skipped rather than guessed.
+ */
+export function buildCitationLabelIndex(rows: readonly ApprovedRevisionContentRow[]): Map<string, RevisionLabelIndex> {
+  const index = new Map<string, RevisionLabelIndex>();
+  for (const row of rows) {
+    const experiences = asRecord(row?.approved_json)?.experiences;
+    if (typeof row?.id !== "string" || typeof row.source_id !== "string" || !Array.isArray(experiences)) continue;
+    const entry: RevisionLabelIndex = { sourceId: row.source_id, experiences: new Map(), evidence: new Map() };
+    let order = 0;
+    for (const rawExperience of experiences) {
+      const experience = asRecord(rawExperience);
+      if (!experience || typeof experience.logical_id !== "string" || !isExperienceType(experience.type)) continue;
+      entry.experiences.set(experience.logical_id, { title: titleValue(experience.title), type: experience.type });
+      for (const rawItem of Array.isArray(experience.evidence_items) ? experience.evidence_items : []) {
+        const item = asRecord(rawItem);
+        if (!item || typeof item.logical_id !== "string" || !isEvidenceKind(item.kind)) continue;
+        entry.evidence.set(item.logical_id, { kind: item.kind, order: order++ });
+      }
+    }
+    index.set(row.id, entry);
+  }
+  return index;
+}
+
+/** Labels for one record, read only from the record's own revision; anything unresolved falls back to no label. */
+export function citationLabelsFor(record: EvidenceRecord, index: ReadonlyMap<string, RevisionLabelIndex>): CitationLabels {
+  const revision = index.get(record.hit.revision_id);
+  if (!revision || revision.sourceId !== record.hit.source_id) return UNRESOLVED_CITATION_LABELS;
+  const experience = revision.experiences.get(record.hit.logical_experience_id);
+  if (!experience) return UNRESOLVED_CITATION_LABELS;
+  const kinds = record.evidenceLogicalIds
+    .map((id) => revision.evidence.get(id))
+    .filter((item): item is { kind: JdFitEvidenceKind; order: number } => Boolean(item))
+    .sort((a, b) => a.order - b.order)
+    .map((item) => item.kind);
+  return {
+    experience_title: experience.title,
+    experience_type: experience.type,
+    evidence_kinds: [...new Set(kinds)],
+  };
+}
+
+/** Attaches labels to every context record from approved revision content rows. */
+export function attachCitationLabels(evidence: EvidenceRecord[], rows: readonly ApprovedRevisionContentRow[]) {
+  const index = buildCitationLabelIndex(rows);
+  for (const record of evidence) {
+    record.labels = citationLabelsFor(record, index);
+  }
+}
+
 /** Resolves a context handle to the retained approved passage it stands for. */
 export function citationFromEvidence(record: EvidenceRecord): JdFitCitation {
+  const labels = record.labels ?? UNRESOLVED_CITATION_LABELS;
   return {
     evidence_handle: record.handle,
     source_id: record.hit.source_id,
@@ -156,6 +257,9 @@ export function citationFromEvidence(record: EvidenceRecord): JdFitCitation {
     logical_parent_id: record.hit.logical_parent_id,
     logical_chunk_id: record.hit.logical_chunk_id,
     evidence_logical_ids: record.evidenceLogicalIds,
+    experience_title: labels.experience_title,
+    experience_type: labels.experience_type,
+    evidence_kinds: [...labels.evidence_kinds],
     source_span: record.span,
     quote: record.hit.child_text,
   };

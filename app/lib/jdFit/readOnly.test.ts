@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { searchApprovedExperienceEvidence } from "../experience/approvedSearch";
+import {
+  readApprovedRevisionContent,
+  searchApprovedExperienceEvidence,
+  type ApprovedRevisionContentClient,
+} from "../experience/approvedSearch";
 import { JD_FIT_MAX_OUTPUT_TOKENS } from "./config";
 import { evaluateJobDescription } from "./evaluate";
-import type { JdFitSearch } from "./retrieval";
+import type { JdFitLabelLookup, JdFitSearch } from "./retrieval";
 import { ScriptedModelClient, jsonResponse, makeHit } from "./testFixtures";
 
 const root = process.cwd();
@@ -113,8 +117,50 @@ describe("JD-fit isolation", () => {
       report: [jsonResponse({ assessments: [{ requirement_id: "R1", fit: "strong", rationale: "E1 shows it.", evidence_handles: ["E1"] }] })],
     });
 
-    const report = await evaluateJobDescription({ jdText: "Backend engineer" }, { client: model, search });
+    const tableCalls: string[] = [];
+    const labelClient: ApprovedRevisionContentClient = {
+      from(table) {
+        tableCalls.push(`from:${table}`);
+        return {
+          select(columns) {
+            tableCalls.push(`select:${columns}`);
+            return {
+              in(column, values) {
+                tableCalls.push(`in:${column}:${values.join(",")}`);
+                return {
+                  in(column2, values2) {
+                    tableCalls.push(`in:${column2}:${values2.join(",")}`);
+                    return Promise.resolve({ data: [], error: null });
+                  },
+                };
+              },
+            };
+          },
+        };
+      },
+    };
+    const labelLookup: JdFitLabelLookup = (revisionIds, sourceIds) =>
+      readApprovedRevisionContent(revisionIds, sourceIds, { client: labelClient });
+
+    const report = await evaluateJobDescription({ jdText: "Backend engineer" }, { client: model, search, labelLookup });
     assert.equal(report.status, "evaluated");
     assert.deepEqual(rpcCalls, ["match_approved_experience_chunks"]);
+    assert.deepEqual(tableCalls, [
+      "from:experience_revisions",
+      "select:id, source_id, approved_json",
+      `in:id:${hit.revision_id}`,
+      `in:source_id:${hit.source_id}`,
+    ]);
+  });
+
+  it("keeps the citation label lookup to a single select", () => {
+    const text = readFileSync(join(root, "app/lib/experience/approvedSearch.ts"), "utf8");
+    const start = text.indexOf("export async function readApprovedRevisionContent");
+    assert.ok(start > 0, "readApprovedRevisionContent exists");
+    const body = text.slice(start);
+    assert.equal((body.match(/\.select\(/g) ?? []).length, 1);
+    for (const mutation of [".insert(", ".update(", ".upsert(", ".delete(", ".rpc(", ".storage"]) {
+      assert.equal(body.includes(mutation), false, `label lookup must not call ${mutation}`);
+    }
   });
 });

@@ -146,7 +146,13 @@ export async function runLiveRagEval(input: RunLiveRagEvalInput): Promise<RagEva
     runId: `live-${new Date(startedAt).toISOString().replace(/[-:.]/g, "")}`,
     dependenciesFor: (corpus) => {
       const override = overrides?.(corpus) ?? {};
-      return { client: override.client ?? client ?? getJdFitModelClient(), search: override.search ?? search, now: override.now, model: override.model };
+      return {
+        client: override.client ?? client ?? getJdFitModelClient(),
+        search: override.search ?? search,
+        labelLookup: override.labelLookup,
+        now: override.now,
+        model: override.model,
+      };
     },
   });
 }

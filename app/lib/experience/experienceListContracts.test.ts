@@ -1,0 +1,62 @@
+import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, it } from "node:test";
+
+const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+
+/** The Experience list page and the components it renders. */
+function listSurface() {
+  return [
+    "app/experience/page.tsx",
+    "app/experience/_components/DropZone.tsx",
+    "app/experience/_components/ExperienceRow.tsx",
+    "app/experience/_components/StageLegend.tsx",
+  ].map((path) => ({ path, text: read(path) }));
+}
+
+describe("experience list page contracts", () => {
+  it("reads sources through the shared workspace summary provider", () => {
+    const page = read("app/experience/page.tsx");
+    assert.match(page, /useWorkspaceSummary\(\)/);
+    assert.doesNotMatch(page, /fetch\(/, "the list page itself does not fetch; the provider does");
+    assert.match(read("app/components/WorkspaceSummaryProvider.tsx"), /fetch\("\/api\/experiences"/);
+  });
+
+  it("uploads inline to the experience API and opens the new file's page", () => {
+    const dropZone = read("app/experience/_components/DropZone.tsx");
+    assert.match(read("app/lib/experience/uploadUi.ts"), /endpoint: "\/api\/experiences"/);
+    assert.match(dropZone, /fetch\(config\.endpoint, \{ method: "POST", body: formData \}\)/);
+    assert.match(dropZone, /shouldAutostart\(body\)/);
+    assert.match(dropZone, /sessionStorage\.setItem\(autostartKey\(sourceId\)/);
+    assert.match(dropZone, /router\.push\(`\/experience\/\$\{sourceId\}`\)/);
+    assert.match(dropZone, /role="alert"/, "upload errors are shown in place");
+  });
+
+  it("has no modal, auto-closing timer or comma-joined action text", () => {
+    for (const { path, text } of listSurface()) {
+      for (const retired of ["UploadModal", "actions.join", "setTimeout", "window.confirm", "confirm("]) {
+        assert.equal(text.includes(retired), false, `${path} must not contain ${retired}`);
+      }
+    }
+    assert.equal(existsSync(join(process.cwd(), "app/components/UploadModal.tsx")), false);
+  });
+
+  it("links every row to its file page and renders one primary action from the stage view", () => {
+    const row = read("app/experience/_components/ExperienceRow.tsx");
+    assert.match(row, /`\/experience\/\$\{source\.id\}`/);
+    assert.match(row, /toStageView\(source\)/);
+    assert.match(row, /view\.primary/);
+    assert.match(row, /<OverflowMenu/);
+    assert.match(row, /<DotStepper/);
+    assert.match(read("app/experience/page.tsx"), /<StageLegend \/>/);
+  });
+
+  it("has no generic document section, route or preview", () => {
+    for (const { path, text } of listSurface()) {
+      for (const retired of ["Generic Documents", "/api/documents", "PDFViewerModal", "fetchDocuments"]) {
+        assert.equal(text.includes(retired), false, `${path} must not reference ${retired}`);
+      }
+    }
+  });
+});

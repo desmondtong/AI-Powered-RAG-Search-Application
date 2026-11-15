@@ -32,6 +32,16 @@ describe("JD-fit documentation", () => {
     assert.equal(JdFitErrorResponseSchema.safeParse(example("error")).success, true);
   });
 
+  it("documents the citation context labels and their read-only source", () => {
+    for (const field of ["experience_title", "experience_type", "evidence_kinds", "readApprovedRevisionContent"]) {
+      assert.match(readme, new RegExp(field));
+    }
+    assert.match(readme, /never from the model/);
+    const citation = example("response").assessments[0].citations[0];
+    assert.equal(citation.experience_title, "Project Atlas");
+    assert.deepEqual(citation.evidence_kinds, ["contribution"]);
+  });
+
   it("shows diagnostics without credentials or private storage paths", () => {
     const response = example("response");
     assert.ok(response.diagnostics.model);

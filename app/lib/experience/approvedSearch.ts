@@ -136,3 +136,53 @@ export async function searchApprovedExperienceEvidence(
 
   return ((Array.isArray(data) ? data : []) as ApprovedExperienceSearchRow[]).map(mapApprovedSearchRow);
 }
+
+export interface ApprovedRevisionContentRow {
+  id: string;
+  source_id: string;
+  approved_json: unknown;
+}
+
+type ApprovedRevisionContentResult = PromiseLike<{ data: unknown; error: { code?: string; message?: string } | null }>;
+
+/** The read-only slice of a Supabase client the citation label lookup needs: `from().select().in().in()`. */
+export interface ApprovedRevisionContentClient {
+  from(table: string): {
+    select(columns: string): {
+      in(column: string, values: string[]): {
+        in(column: string, values: string[]): ApprovedRevisionContentResult;
+      };
+    };
+  };
+}
+
+export interface ApprovedRevisionContentOptions {
+  client?: ApprovedRevisionContentClient;
+}
+
+/**
+ * Reads the retained approved content of revisions that retrieval already returned, so callers can label citations.
+ * One read-only query, scoped to both the revision IDs and their source IDs; it never widens what was retrieved.
+ */
+export async function readApprovedRevisionContent(
+  revisionIds: string[],
+  sourceIds: string[],
+  options: ApprovedRevisionContentOptions = {},
+): Promise<ApprovedRevisionContentRow[]> {
+  const revisions = [...new Set(revisionIds.filter((id) => typeof id === "string" && id.trim()))];
+  const sources = [...new Set(sourceIds.filter((id) => typeof id === "string" && id.trim()))];
+  if (revisions.length === 0 || sources.length === 0) {
+    return [];
+  }
+
+  const client = options.client ?? (getSupabaseAdminClient() as unknown as ApprovedRevisionContentClient);
+  const { data, error } = await client
+    .from("experience_revisions")
+    .select("id, source_id, approved_json")
+    .in("id", revisions)
+    .in("source_id", sources);
+  if (error) {
+    throw new Error(`Failed to read approved revision content: ${error.message ?? error.code ?? "unknown error"}`);
+  }
+  return (Array.isArray(data) ? data : []) as ApprovedRevisionContentRow[];
+}

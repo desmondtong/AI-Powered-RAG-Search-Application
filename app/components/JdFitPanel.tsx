@@ -1,26 +1,60 @@
 "use client";
-import Link from "next/link";
-import { useState } from "react";
-import type { JdFitAssessment, JdFitResponse } from "@/app/lib/jdFit/contracts";
-import {
-  FIT_LABEL_DISPLAY,
-  JD_FIT_ENDPOINT,
-  buildJdFitRequestBody,
-  countByFit,
-  interpretJdFitResponse,
-  networkErrorState,
-  type JdFitViewState,
-} from "@/app/lib/jdFit/ui";
 
-const card = "bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-6 shadow-sm mb-6";
+import { useRef, useState } from "react";
+import { BoltIcon, ErrorIcon, UploadIcon } from "@/app/components/icons";
+import { useWorkspaceSummary } from "@/app/components/WorkspaceSummaryProvider";
+import { ButtonLink, Button } from "@/app/experience/_components/ui";
+import { FIT_CHECK, STAGE_LEGEND } from "@/app/lib/experience/workspace/copy";
+import { JD_FIT_ENDPOINT, buildJdFitRequestBody, interpretJdFitResponse, networkErrorState, type JdFitViewState } from "@/app/lib/jdFit/ui";
+import FitReport from "./FitReport";
 
+/** Shown, with the input disabled, only when the source list loaded and no file is indexed. */
+function FitEmptyState() {
+  return (
+    <section aria-labelledby="fit-empty-title" className="rounded-panel border border-hairline bg-card p-6">
+      <span aria-hidden className="grid size-11 place-items-center rounded-panel bg-evidence-wash text-cobalt">
+        <UploadIcon size={22} />
+      </span>
+      <h2 id="fit-empty-title" className="mt-3 font-heading text-headline-md text-ink">
+        {FIT_CHECK.emptyTitle}
+      </h2>
+      <p className="mt-1 max-w-2xl text-body-md text-ink-secondary">{FIT_CHECK.emptyBody}</p>
+      <ol className="mt-4 grid gap-2 sm:grid-cols-2">
+        {STAGE_LEGEND.map((stage, index) => (
+          <li key={stage.name} className="text-body-sm text-ink-secondary">
+            <span className="font-semibold text-ink">
+              {index + 1} · {stage.name}.
+            </span>{" "}
+            {stage.description}
+          </li>
+        ))}
+      </ol>
+      <ButtonLink href="/experience" variant="primary" className="mt-5">
+        <UploadIcon size={16} />
+        {FIT_CHECK.emptyAction}
+      </ButtonLink>
+    </section>
+  );
+}
+
+/**
+ * The JD card and every report state. It sends exactly one `POST /api/jd-fit` with `{ jdText }` per evaluation and
+ * reads the indexed-file count from the shared workspace summary.
+ */
 export default function JdFitPanel() {
+  const { indexedCount } = useWorkspaceSummary();
   const [jdText, setJdText] = useState("");
   const [view, setView] = useState<JdFitViewState>({ kind: "idle" });
+  const [run, setRun] = useState<{ filesSearched: number | null; elapsedMs: number | null }>({ filesSearched: null, elapsedMs: null });
+  const inFlight = useRef(false);
   const loading = view.kind === "loading";
+  const empty = indexedCount === 0;
 
   const evaluate = async () => {
-    if (!jdText.trim() || loading) return;
+    if (!jdText.trim() || inFlight.current || empty) return;
+    inFlight.current = true;
+    const filesSearched = indexedCount;
+    const started = performance.now();
     setView({ kind: "loading" });
     try {
       const res = await fetch(JD_FIT_ENDPOINT, {
@@ -34,182 +68,78 @@ export default function JdFitPanel() {
       } catch {
         body = null;
       }
+      setRun({ filesSearched, elapsedMs: performance.now() - started });
       setView(interpretJdFitResponse(res.status, body));
     } catch {
       setView(networkErrorState());
+    } finally {
+      inFlight.current = false;
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      evaluate();
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      void evaluate();
     }
   };
+
+  const scope =
+    indexedCount === null ? "evaluates against all indexed files" : `evaluates against all ${indexedCount} indexed ${indexedCount === 1 ? "file" : "files"}`;
 
   return (
-    <div>
-      <div className={card}>
-        <label htmlFor="jd-text" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+    <div className="space-y-6">
+      {empty && <FitEmptyState />}
+
+      <section aria-labelledby="jd-card-title" className="rounded-panel border border-hairline bg-card p-5">
+        <label id="jd-card-title" htmlFor="jd-text" className="block font-heading text-title-sm text-ink">
           Job description
         </label>
         <textarea
           id="jd-text"
-          className="w-full p-4 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 resize-y focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          placeholder="Paste a job description to compare against your approved experience..."
+          className="mt-2 w-full resize-y rounded-control border border-hairline-strong bg-card p-3 text-body-lg text-ink placeholder:text-ink-muted focus:border-cobalt focus:outline-none disabled:bg-disabled-bg disabled:text-disabled-text"
+          placeholder="Paste the full job description here…"
           value={jdText}
-          onChange={(e) => setJdText(e.target.value)}
+          onChange={(event) => setJdText(event.target.value)}
           onKeyDown={handleKeyDown}
           rows={8}
+          disabled={empty}
         />
-        <div className="mt-4 flex flex-wrap items-center gap-4">
-          <button
-            onClick={evaluate}
-            className="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
-            disabled={loading || !jdText.trim()}
-          >
-            {loading ? "Evaluating..." : "Evaluate fit"}
-          </button>
-          <span className="text-sm text-gray-500 dark:text-gray-400">
-            {jdText.length.toLocaleString("en-US")} characters · Uses all indexed experience · Cmd/Ctrl + Enter
+        <div className="mt-3 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <span className="text-body-sm text-ink-muted">
+            {jdText.length.toLocaleString("en-US")} characters · {scope} · Cmd/Ctrl + Enter
           </span>
+          <Button variant="primary" onClick={() => void evaluate()} disabled={empty || loading || !jdText.trim()}>
+            <BoltIcon size={16} />
+            {loading ? "Evaluating…" : "Evaluate fit"}
+          </Button>
         </div>
-      </div>
+      </section>
 
-      <div aria-live="polite">
+      <div aria-live="polite" className="space-y-6">
         {loading && (
-          <div className={card}>
-            <p className="text-gray-700 dark:text-gray-300">
-              Reading requirements, searching your approved experience, and writing the report. This can take up to a minute.
-            </p>
-          </div>
+          <p className="rounded-panel border border-hairline bg-card p-5 text-body-md text-ink-secondary">
+            Reading requirements, searching your approved experience and writing the report. This can take up to a minute.
+          </p>
         )}
 
         {view.kind === "error" && (
-          <div role="alert" className="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-lg p-6 mb-6">
-            <h2 className="font-semibold text-red-800 dark:text-red-300 mb-1">Evaluation failed</h2>
-            <p className="text-red-800 dark:text-red-200">{view.message}</p>
+          <section role="alert" className="rounded-panel border border-red-border bg-red-wash p-5">
+            <h2 className="flex items-center gap-2 font-heading text-title-sm text-ink">
+              <ErrorIcon size={18} className="text-red" />
+              Evaluation failed
+            </h2>
+            <p className="mt-1 text-body-md text-ink-secondary">{view.message}</p>
             {view.retryable && (
-              <button
-                onClick={evaluate}
-                className="mt-4 bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 font-medium"
-              >
+              <Button className="mt-3" onClick={() => void evaluate()}>
                 Try again
-              </button>
+              </Button>
             )}
-          </div>
+          </section>
         )}
 
-        {view.kind === "report" && <JdFitReport report={view.report} />}
+        {view.kind === "report" && <FitReport report={view.report} filesSearched={run.filesSearched} elapsedMs={run.elapsedMs} />}
       </div>
-    </div>
-  );
-}
-
-function FitBadge({ fit }: { fit: JdFitAssessment["fit"] }) {
-  const display = FIT_LABEL_DISPLAY[fit];
-  return <span className={`inline-block rounded px-2 py-0.5 text-xs font-semibold ${display.className}`}>{display.text}</span>;
-}
-
-function JdFitReport({ report }: { report: JdFitResponse }) {
-  const counts = countByFit(report);
-  const requirementById = new Map(report.requirements.map((requirement) => [requirement.requirement_id, requirement]));
-
-  return (
-    <div>
-      {report.status === "no_evidence" && (
-        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-lg p-6 mb-6">
-          <h2 className="font-semibold text-amber-900 dark:text-amber-200 mb-1">No approved evidence available</h2>
-          <p className="text-amber-900 dark:text-amber-100">
-            None of your indexed experience matched, or nothing is indexed yet. Upload, approve, and index experience on the{" "}
-            <Link href="/documents" className="underline">
-              Documents page
-            </Link>
-            .
-          </p>
-        </div>
-      )}
-
-      <div className={card}>
-        <h2 className="text-xl font-semibold mb-3">Fit by requirement</h2>
-        <ul className="flex flex-wrap gap-2 mb-6" aria-label="Requirement counts by fit">
-          {(Object.keys(counts) as Array<keyof typeof counts>).map((fit) => (
-            <li key={fit} className="flex items-center gap-1 text-sm text-gray-700 dark:text-gray-300">
-              <FitBadge fit={fit} /> {counts[fit]}
-            </li>
-          ))}
-        </ul>
-
-        <ol className="space-y-4">
-          {report.assessments.map((assessment) => {
-            const requirement = requirementById.get(assessment.requirement_id)!;
-            return (
-              <li key={assessment.requirement_id} className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                <div className="flex flex-wrap items-center gap-2 mb-2">
-                  <FitBadge fit={assessment.fit} />
-                  <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">{requirement.importance}</span>
-                </div>
-                <p className="font-medium text-gray-900 dark:text-gray-100">{requirement.text}</p>
-                <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">{assessment.rationale}</p>
-                {assessment.downgraded && (
-                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">Adjusted: a claim without valid evidence was removed.</p>
-                )}
-                {assessment.citations.length > 0 && (
-                  <div className="mt-3 space-y-2">
-                    {assessment.citations.map((citation) => (
-                      <figure key={citation.evidence_handle} className="border-l-4 border-blue-300 dark:border-blue-700 pl-3">
-                        <blockquote className="text-sm text-gray-800 dark:text-gray-200">{citation.quote}</blockquote>
-                        <figcaption className="text-xs text-gray-500 dark:text-gray-400">
-                          {citation.evidence_handle} · {citation.source_file_name || "Experience file"}
-                        </figcaption>
-                      </figure>
-                    ))}
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ol>
-      </div>
-
-      {report.gaps.length > 0 && (
-        <div className={card}>
-          <h2 className="text-xl font-semibold mb-3">Gaps ({report.gaps.length})</h2>
-          <ul className="space-y-2">
-            {report.gaps.map((gap) => (
-              <li key={gap.requirement_id} className="flex flex-wrap items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
-                <FitBadge fit={gap.fit} /> {gap.text}
-                <span className="text-xs text-gray-500 dark:text-gray-400">({gap.importance})</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <details className={card}>
-        <summary className="cursor-pointer font-medium">Diagnostics</summary>
-        <dl className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm text-gray-700 dark:text-gray-300">
-          <dt>Model</dt>
-          <dd>{report.diagnostics.model}</dd>
-          <dt>Prompt versions</dt>
-          <dd>
-            {report.diagnostics.requirement_prompt_version}, {report.diagnostics.report_prompt_version}
-          </dd>
-          <dt>Validation version</dt>
-          <dd>{report.diagnostics.validation_version}</dd>
-          <dt>Requirements</dt>
-          <dd>{report.diagnostics.requirement_count}</dd>
-          <dt>Evidence retrieved / used</dt>
-          <dd>
-            {report.diagnostics.retrieval.retrieved_count} / {report.diagnostics.retrieval.context_evidence_count}
-          </dd>
-          <dt>Context trimmed</dt>
-          <dd>
-            {report.diagnostics.retrieval.context_truncated ? `yes (${report.diagnostics.retrieval.trimmed_evidence_count})` : "no"}
-          </dd>
-          <dt>Claims adjusted</dt>
-          <dd>{report.diagnostics.validation.downgraded_claim_count}</dd>
-        </dl>
-      </details>
     </div>
   );
 }

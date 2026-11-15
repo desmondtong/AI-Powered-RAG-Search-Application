@@ -36,6 +36,7 @@ import {
 import { storeExperienceSourceFile, type ExperienceSourceStorageClient } from "./sourceStorage";
 import { StructuredGenerationError, generateValidatedStructuredExperienceDraft } from "./structuredGeneration";
 import { freezeApprovedExperienceIndexPlan } from "./parentPlanning";
+import { numberApprovedVersions, versionNumberMap, type ApprovedRevisionRow } from "./versionNumbers";
 
 export type ExperienceAction = "extract" | "parse" | "review" | "approve" | "index" | "retry";
 export type ExperienceServiceClient = ReturnType<typeof getSupabaseAdminClient>;
@@ -166,7 +167,8 @@ function firstRow<T>(data: unknown): T | null {
   return normalizeRows<T>(data)[0] ?? null;
 }
 
-function sourceSummary(row: SourceRow) {
+function sourceSummary(row: SourceRow, versionNumbers: ReadonlyMap<string, number>) {
+  const versionOf = (revisionId: string | null) => (revisionId ? versionNumbers.get(revisionId) ?? null : null);
   return {
     id: row.id,
     file_name: row.original_file_name,
@@ -178,6 +180,8 @@ function sourceSummary(row: SourceRow) {
     latest_draft_revision_id: row.latest_draft_revision_id,
     latest_approved_revision_id: row.latest_approved_revision_id,
     active_revision_id: row.active_revision_id,
+    active_version_number: versionOf(row.active_revision_id),
+    latest_approved_version_number: versionOf(row.latest_approved_revision_id),
     failure: row.failure,
     cleanup_error: row.cleanup_error,
     created_at: row.created_at,
@@ -251,6 +255,40 @@ async function listRevisionRows(sourceId: string, client: ExperienceServiceClien
     throw new ExperienceApiError("revisions-read-failed", errorMessage(error), 500);
   }
   return normalizeRows<RevisionRow>(data);
+}
+
+async function listApprovedRevisionRows(
+  client: ExperienceServiceClient,
+  sourceIds: readonly string[],
+): Promise<Array<ApprovedRevisionRow & { source_id: string }>> {
+  if (sourceIds.length === 0) {
+    return [];
+  }
+  const { data, error } = await client
+    .from("experience_revisions")
+    .select("id, source_id, approved_at")
+    .in("source_id", [...sourceIds])
+    .not("approved_at", "is", null);
+  if (error) {
+    throw new ExperienceApiError("revisions-read-failed", errorMessage(error), 500);
+  }
+  return normalizeRows<ApprovedRevisionRow & { source_id: string }>(data);
+}
+
+function approvedVersionsBySource(rows: ReadonlyArray<ApprovedRevisionRow & { source_id: string }>) {
+  const grouped = new Map<string, ApprovedRevisionRow[]>();
+  for (const row of rows) {
+    const list = grouped.get(row.source_id) ?? [];
+    list.push(row);
+    grouped.set(row.source_id, list);
+  }
+  const numbers = new Map<string, number>();
+  for (const list of grouped.values()) {
+    for (const [revisionId, versionNumber] of versionNumberMap(numberApprovedVersions(list))) {
+      numbers.set(revisionId, versionNumber);
+    }
+  }
+  return numbers;
 }
 
 async function getExtractionRow(extractionId: string, sourceId: string, client: ExperienceServiceClient): Promise<ExtractionRow> {
@@ -493,22 +531,27 @@ export async function listExperienceSources(client?: ExperienceServiceClient) {
   if (error) {
     throw new ExperienceApiError("sources-read-failed", errorMessage(error), 500);
   }
-  return { sources: normalizeRows<SourceRow>(data).map(sourceSummary) };
+  const rows = normalizeRows<SourceRow>(data);
+  const versionNumbers = approvedVersionsBySource(await listApprovedRevisionRows(supabase, rows.map((row) => row.id)));
+  return { sources: rows.map((row) => sourceSummary(row, versionNumbers)) };
 }
 
 export async function getExperienceSourceDetail(sourceId: string, client?: ExperienceServiceClient) {
   const supabase = getClient(client);
   const source = await getSourceRow(sourceId, supabase);
-  const [extractions, revisions] = await Promise.all([
+  const [extractions, revisions, approvedRows] = await Promise.all([
     listExtractionRows(sourceId, supabase),
     listRevisionRows(sourceId, supabase),
+    listApprovedRevisionRows(supabase, [sourceId]),
   ]);
+  const approvedVersions = numberApprovedVersions(approvedRows);
 
   return {
-    source: sourceSummary(source),
+    source: sourceSummary(source, versionNumberMap(approvedVersions)),
     latest_extraction: extractions[0] ?? null,
     latest_revision: revisions[0] ?? null,
     revisions,
+    approved_versions: approvedVersions,
   };
 }
 

@@ -8,7 +8,7 @@ JD-fit turns a pasted job description into a categorical, cited fit report again
 2. **Requirements.** A dedicated Gemini call extracts distinct requirements (`requirements.ts`). The JD is passed as one JSON string between delimiter lines and treated as data, never as instructions.
 3. **Retrieval.** Each requirement's retrieval query goes to `searchApprovedExperienceEvidence()` without a source list, so every eligible active indexed experience source is searched (`retrieval.ts`). Lookups run at most four at a time.
 4. **Context.** Hits are deduplicated and fitted into the character budget round-robin by rank, so each requirement keeps its best hits first (`context.ts`). Each kept passage gets a handle such as `E1`.
-5. **Report.** A second Gemini call labels each requirement and cites handles (`report.ts`). If no approved evidence exists at all, no report call is made and every requirement is `missing`.
+5. **Labels and report.** Kept passages are labelled with their experience title, type and evidence kinds from approved content (see Citation Semantics). A second Gemini call labels each requirement and cites handles (`report.ts`). If no approved evidence exists at all, no report call is made and every requirement is `missing`.
 6. **Validation.** Citations are checked deterministically (`validation.ts`). A completed but invalid report gets one repair attempt; anything still unsupported is downgraded.
 
 The overall deadline covers steps 2 to 6. Exceeding it returns `deadline-exceeded` and no partial report.
@@ -28,6 +28,14 @@ There is no numeric score. `weak` and `missing` requirements are also listed in 
 
 A citation resolves a model-cited handle back to the retrieved approved passage: source ID, file name, revision ID, approved content hash, logical experience, parent, and chunk IDs, the evidence logical IDs, and the retained source span. `quote` is the chunk text, which ingestion guarantees equals the retained span text. Generated summaries, embedding headers, parent text, and physical vector row IDs are never citation anchors.
 
+Each citation also carries context labels for display, read from the cited revision's retained `approved_json`, never from the model:
+
+- `experience_title`: the approved title of the cited logical experience, or `null` when it has none.
+- `experience_type`: `project` or `general-experience`.
+- `evidence_kinds`: the distinct kinds of the cited evidence logical IDs, in the order the items appear in the approved revision.
+
+After retrieval, the pipeline runs one read-only `select` of `experience_revisions` (`readApprovedRevisionContent()` in `approvedSearch.ts`), limited to the revision IDs and source IDs retrieval returned. The lookup counts against the overall deadline. Labels always come from the cited revision, so an R1 citation never shows R2's title. If the read fails, or the cited logical IDs are missing from the content, the report is still returned with `experience_title: null`, `experience_type: "project"` and `evidence_kinds: []`. The `project` fallback was chosen because a null project title is omitted from captions, so nothing invented is shown.
+
 R1 and an R2 drafted from it share logical IDs. Only `revision_id` and `approved_content_hash` show which revision a citation came from.
 
 Validation rules:
@@ -37,6 +45,12 @@ Validation rules:
 - `missing` carries no citations.
 - A rationale may mention only handles it cites, and may not contain a numeric fit score. Otherwise the rationale is replaced, and a positive label becomes `weak`.
 - Downgraded assessments have `downgraded: true` and are counted in diagnostics.
+
+## Browser Use
+
+Fit Check is the home page, `/`. It posts only `{ jdText }` to `POST /api/jd-fit`, from "Evaluate fit" or Cmd/Ctrl+Enter. The indexed-file count comes from the shared workspace summary, not from this page: when it loaded and is zero, the page shows "Fit Check needs at least one indexed experience file" with "Upload experience file" (linking to `/experience`) and disables the input. When the count could not be loaded, evaluation stays enabled and the no-evidence report covers the empty case.
+
+A report shows "N requirements · M files searched · T s", four count tiles (Strong, Partial, Weak, Missing), requirement cards grouped in that order, "Gaps to address" and collapsed diagnostics. Fit is categorical only. Each citation is captioned "file name · experience title · evidence kinds" from the citation fields, and "Open in source" opens `/experience/[id]?cite=<block_id>:<start>:<end>&rev=<revision_id>`. The file page highlights the span only when the displayed block text at those offsets equals the cited quote; otherwise it shows the quote with a notice that it comes from a version whose text is not shown.
 
 ## Configured Limits
 
@@ -89,6 +103,9 @@ Successful response (HTTP 200):
           "logical_parent_id": "exp-atlas:parent-1",
           "logical_chunk_id": "exp-atlas:chunk-1",
           "evidence_logical_ids": ["exp-atlas:ev-1"],
+          "experience_title": "Project Atlas",
+          "experience_type": "project",
+          "evidence_kinds": ["contribution"],
           "source_span": { "block_id": "b1", "start": 0, "end": 39 },
           "quote": "Built TypeScript REST APIs for billing."
         }

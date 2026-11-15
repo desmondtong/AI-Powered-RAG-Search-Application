@@ -1,10 +1,14 @@
 import { hashFixtureCorpusContent, type RagEvalFixture } from "./fixtureSchema";
 import { RAG_EVAL_FIXTURE_SCHEMA_VERSION } from "./versions";
 import type { ApprovedExperienceSearchResult } from "../experience/approvedSearch";
-import { searchApprovedExperienceEvidence } from "../experience/approvedSearch";
+import {
+  readApprovedRevisionContent,
+  searchApprovedExperienceEvidence,
+  type ApprovedRevisionContentClient,
+} from "../experience/approvedSearch";
 import type { StructuredExperienceExport } from "../experience/contracts";
-import type { JdFitSearch } from "../jdFit/retrieval";
-import { FixtureScriptedModelClient, offlineHitForPassage } from "./adapters";
+import type { JdFitLabelLookup, JdFitSearch } from "../jdFit/retrieval";
+import { FixtureScriptedModelClient, offlineHitForPassage, offlineLabelLookup } from "./adapters";
 import { buildOfflineCorpusIndex } from "./corpusIndex";
 import { newManifest, type CorpusManifest } from "./manifest";
 import { synthesizeOfflineCorpusEntry } from "./offlineExport";
@@ -82,7 +86,7 @@ export interface RecordedClientCall {
 }
 
 class MockQuery implements PromiseLike<{ data: Row[]; error: null }> {
-  private filters: Array<[string, unknown]> = [];
+  private filters: Array<(row: Row) => boolean> = [];
   private maxRows: number | null = null;
 
   constructor(private readonly rows: Row[]) {}
@@ -91,11 +95,20 @@ class MockQuery implements PromiseLike<{ data: Row[]; error: null }> {
     return this;
   }
   eq(key: string, value: unknown) {
-    this.filters.push([key, value]);
+    this.filters.push((row) => row[key] === value);
     return this;
   }
   is(key: string, value: unknown) {
-    this.filters.push([key, value]);
+    this.filters.push((row) => (row[key] ?? null) === value);
+    return this;
+  }
+  in(key: string, values: unknown[]) {
+    this.filters.push((row) => values.includes(row[key]));
+    return this;
+  }
+  not(key: string, operator: "is", value: unknown) {
+    if (operator !== "is") throw new Error(`Unsupported not() operator ${operator}`);
+    this.filters.push((row) => (row[key] ?? null) !== value);
     return this;
   }
   order() {
@@ -109,14 +122,14 @@ class MockQuery implements PromiseLike<{ data: Row[]; error: null }> {
     onfulfilled?: ((value: { data: Row[]; error: null }) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ): PromiseLike<TResult1 | TResult2> {
-    let rows = this.rows.filter((row) => this.filters.every(([key, value]) => row[key] === value));
+    let rows = this.rows.filter((row) => this.filters.every((matches) => matches(row)));
     if (this.maxRows !== null) rows = rows.slice(0, this.maxRows);
     return Promise.resolve({ data: rows, error: null as null }).then(onfulfilled, onrejected);
   }
 }
 
 /**
- * In-memory Supabase stand-in for read paths (`from(...).select().eq().is().order().limit()`). Every mutation,
+ * In-memory Supabase stand-in for read paths (`from(...).select().eq().is().in().not().order().limit()`). Every mutation,
  * RPC, and Storage call is recorded and rejected, so tests can assert that read-only code never reaches them.
  */
 export class RecordingSupabaseClient {
@@ -187,6 +200,7 @@ function revisionRow(exportDoc: StructuredExperienceExport, status: string) {
     prompt_version: revision.revision.prompt_version,
     parse_error: null,
     created_at: status === "approved" ? "2026-01-02T00:00:00.000Z" : "2026-01-01T00:00:00.000Z",
+    approved_at: status === "approved" ? "2026-01-02T00:00:00.000Z" : "2026-01-01T00:00:00.000Z",
   };
 }
 
@@ -250,9 +264,16 @@ export function liveCorpusHarness(fixtures: RagEvalFixture[]) {
  * Per-fixture scripted dependencies that still go through the real approved-search helper: the RPC client answers
  * `match_approved_experience_chunks` with the scripted hits for the query and records every RPC name.
  */
-export function scriptedLiveDependencies(fixtures: RagEvalFixture[]) {
+/**
+ * Scripted model and search for live-mode tests. Citation labels are read through `labelClient` (for example the
+ * harness's read-only client) when given, otherwise from the synthesized exports, so no live client is ever built.
+ */
+export function scriptedLiveDependencies(fixtures: RagEvalFixture[], labelClient?: ApprovedRevisionContentClient) {
   const index = buildOfflineCorpusIndex(fixtures);
   const rpcCalls: string[] = [];
+  const labelLookup: JdFitLabelLookup = labelClient
+    ? (revisionIds, sourceIds) => readApprovedRevisionContent(revisionIds, sourceIds, { client: labelClient })
+    : offlineLabelLookup([...index.revisions.values()].map((revision) => revision.export));
   const dependenciesFor = (corpus: FixtureCorpus) => {
     const offlineCorpus = index.bySource.get(corpus.source_id)!;
     const activeExport = [...index.revisions.values()].find((revision) => revision.fixture_id === corpus.fixture.fixture_id && revision.role === "active")!.export;
@@ -281,7 +302,7 @@ export function scriptedLiveDependencies(fixtures: RagEvalFixture[]) {
           },
         },
       });
-    return { client: new FixtureScriptedModelClient(corpus.fixture.offline), search };
+    return { client: new FixtureScriptedModelClient(corpus.fixture.offline), search, labelLookup };
   };
   return { dependenciesFor, rpcCalls };
 }

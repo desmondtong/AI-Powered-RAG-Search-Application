@@ -1,4 +1,15 @@
+# JD Fit Check
+
 A personal job-fit tool built on [Next.js](https://nextjs.org). You upload your own experience files (DOCX or selectable-text PDF), review the source-grounded draft the app extracts from each one, and approve and index it as evidence. You then paste a job description, and the app evaluates each of its requirements against that approved evidence, returning a categorical fit report in which every claim cites the source text it came from.
+
+## Pages
+
+The top bar has two destinations and a pill counting the files that are indexed and searchable.
+
+- **Fit Check** (`/`). Paste a job description and choose "Evaluate fit". The report groups requirements as Strong, Partial, Weak or Missing and cites the exact sentence in your file for every claim. "Open in source" opens that sentence on the file's page.
+- **Experience** (`/experience`). Upload a DOCX or selectable-text PDF in the "Upload experience file" drop zone. Each file then has its own page, `/experience/[id]`, that walks it through six stages: Upload, Extract, Parse, Review, Approve and Index. Indexing starts only when you choose "Index now".
+
+Bookmarks to the previous list and review URLs permanently redirect to these pages. The light and dark themes follow your operating-system setting.
 
 ## Environment
 
@@ -125,7 +136,7 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to load Nunito Sans (headings) and Source Sans 3 (body text) from Google Fonts.
 
 ## Learn More
 

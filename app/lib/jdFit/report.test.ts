@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { JD_FIT_REPORT_PROMPT_VERSION } from "./config";
+import type { ApprovedRevisionContentRow } from "../experience/approvedSearch";
 import { buildEvidenceContext } from "./context";
 import { JdFitAssessmentSchema, JdFitError, type JdFitRequirement } from "./contracts";
 import { JdFitDeadline, type JdFitModelResponse } from "./generation";
+import { evaluateJobDescription } from "./evaluate";
 import { generateFitReport } from "./report";
+import { resolveCitationLabels, type JdFitLabelLookup } from "./retrieval";
 import { ScriptedModelClient, jsonResponse, makeHit } from "./testFixtures";
 import { NOT_ASSESSED_RATIONALE, REMOVED_CLAIM_RATIONALE, applySafeDowngrades, findReportIssues } from "./validation";
 
@@ -166,5 +169,135 @@ describe("JD-fit citation validation", () => {
     const safe = applySafeDowngrades(output, requirements, context.evidence);
     assert.equal(safe.assessments[0].fit, "weak");
     assert.doesNotMatch(safe.assessments[0].rationale, /95%/);
+  });
+});
+
+const SOURCE_ID = "11111111-1111-4111-8111-111111111111";
+const R1 = "22222222-2222-4222-8222-222222222222";
+const R2 = "33333333-3333-4333-8333-333333333333";
+
+function approvedRow(revisionId: string, experiences: unknown[], sourceId = SOURCE_ID): ApprovedRevisionContentRow {
+  return { id: revisionId, source_id: sourceId, approved_json: { schema_version: "1", experiences } };
+}
+
+function experience(logicalId: string, type: string, title: string | null, items: Array<[string, string]>) {
+  return {
+    logical_id: logicalId,
+    type,
+    title: { value: title, source_refs: title ? [{ block_id: "b1", start: 0, end: title.length }] : [] },
+    evidence_items: items.map(([id, kind]) => ({ logical_id: id, kind, summary: `${kind} item`, source_refs: [] })),
+  };
+}
+
+const labelRequirements: JdFitRequirement[] = [
+  { requirement_id: "R1", text: "TypeScript APIs", importance: "required", retrieval_query: "TypeScript API" },
+];
+
+function labelContext(hit: ReturnType<typeof makeHit>) {
+  return buildEvidenceContext(labelRequirements, [{ requirement_id: "R1", hits: [hit] }]);
+}
+
+async function citationFor(hit: ReturnType<typeof makeHit>, lookup: JdFitLabelLookup) {
+  const context = labelContext(hit);
+  await resolveCitationLabels({ evidence: context.evidence, deadline: new JdFitDeadline(120_000), lookup });
+  const client = new ScriptedModelClient({
+    report: [jsonResponse({ assessments: [{ requirement_id: "R1", fit: "strong", rationale: "E1 shows it.", evidence_handles: ["E1"] }] })],
+  });
+  const result = await generateFitReport({ requirements: labelRequirements, context, client, deadline: new JdFitDeadline(120_000) });
+  return result.assessments[0].citations[0];
+}
+
+describe("JD-fit citation context labels", () => {
+  it("labels project evidence with its approved title, type and kind", async () => {
+    const lookup: JdFitLabelLookup = async () => [
+      approvedRow(R1, [experience("exp-atlas", "project", "Project Atlas", [["exp-atlas:ev-1", "contribution"]])]),
+    ];
+    const citation = await citationFor(makeHit({ chunkRowId: "c1", text: "Built TypeScript REST APIs." }), lookup);
+    assert.equal(citation.experience_title, "Project Atlas");
+    assert.equal(citation.experience_type, "project");
+    assert.deepEqual(citation.evidence_kinds, ["contribution"]);
+    assert.equal(citation.quote, "Built TypeScript REST APIs.");
+    assert.deepEqual(citation.source_span, { block_id: "b1", start: 0, end: 27 });
+  });
+
+  it("keeps an untitled general experience untitled", async () => {
+    const lookup: JdFitLabelLookup = async () => [
+      approvedRow(R1, [experience("exp-general", "general-experience", null, [["exp-general:ev-1", "responsibility"]])]),
+    ];
+    const hit = makeHit({ chunkRowId: "c1", text: "Owned on-call rotations.", logicalExperienceId: "exp-general" });
+    const citation = await citationFor(hit, lookup);
+    assert.equal(citation.experience_title, null);
+    assert.equal(citation.experience_type, "general-experience");
+    assert.deepEqual(citation.evidence_kinds, ["responsibility"]);
+  });
+
+  it("lists each distinct kind of a multi-evidence chunk once, in approved order", async () => {
+    const lookup: JdFitLabelLookup = async () => [
+      approvedRow(R1, [
+        experience("exp-atlas", "project", "Project Atlas", [
+          ["exp-atlas:ev-1", "decision"],
+          ["exp-atlas:ev-2", "contribution"],
+          ["exp-atlas:ev-3", "decision"],
+          ["exp-atlas:ev-4", "outcome"],
+        ]),
+      ]),
+    ];
+    const hit = makeHit({
+      chunkRowId: "c1",
+      text: "Chose Postgres and shipped the billing API.",
+      evidenceLogicalIds: ["exp-atlas:ev-4", "exp-atlas:ev-3", "exp-atlas:ev-2", "exp-atlas:ev-1", "exp-atlas:ev-missing"],
+    });
+    const citation = await citationFor(hit, lookup);
+    assert.deepEqual(citation.evidence_kinds, ["decision", "contribution", "outcome"]);
+  });
+
+  it("reads labels from the cited revision R1 while R2 is approved but not published", async () => {
+    let requested: { revisionIds: string[]; sourceIds: string[] } | null = null;
+    const lookup: JdFitLabelLookup = async (revisionIds, sourceIds) => {
+      requested = { revisionIds, sourceIds };
+      return [
+        approvedRow(R2, [experience("exp-atlas", "project", "Project Atlas v2", [["exp-atlas:ev-1", "outcome"]])]),
+        approvedRow(R1, [experience("exp-atlas", "project", "Project Atlas", [["exp-atlas:ev-1", "contribution"]])]),
+      ];
+    };
+    const citation = await citationFor(makeHit({ chunkRowId: "c1", text: "Built TypeScript REST APIs.", revisionId: R1 }), lookup);
+    assert.deepEqual(requested, { revisionIds: [R1], sourceIds: [SOURCE_ID] });
+    assert.equal(citation.revision_id, R1);
+    assert.equal(citation.experience_title, "Project Atlas");
+    assert.deepEqual(citation.evidence_kinds, ["contribution"]);
+  });
+
+  it("ignores content whose source does not match the cited source", async () => {
+    const lookup: JdFitLabelLookup = async () => [
+      approvedRow(R1, [experience("exp-atlas", "project", "Elsewhere", [["exp-atlas:ev-1", "outcome"]])], "other-source"),
+    ];
+    const citation = await citationFor(makeHit({ chunkRowId: "c1", text: "Built TypeScript REST APIs." }), lookup);
+    assert.equal(citation.experience_title, null);
+    assert.deepEqual(citation.evidence_kinds, []);
+  });
+
+  it("still returns the report with unlabelled citations when the lookup fails", async () => {
+    const lookup: JdFitLabelLookup = async () => {
+      throw new Error("read failed");
+    };
+    const model = new ScriptedModelClient({
+      requirements: [jsonResponse({ requirements: [{ text: "TypeScript APIs", importance: "required", retrieval_query: "TypeScript API" }] })],
+      report: [jsonResponse({ assessments: [{ requirement_id: "R1", fit: "strong", rationale: "E1 shows it.", evidence_handles: ["E1"] }] })],
+    });
+    const search = async () => [makeHit({ chunkRowId: "c1", text: "Built TypeScript REST APIs." })];
+    const report = await evaluateJobDescription({ jdText: "Backend engineer" }, { client: model, search, labelLookup: lookup });
+    const citation = report.assessments[0].citations[0];
+    assert.equal(report.status, "evaluated");
+    assert.equal(citation.experience_title, null);
+    assert.equal(citation.experience_type, "project");
+    assert.deepEqual(citation.evidence_kinds, []);
+    assert.equal(citation.quote, "Built TypeScript REST APIs.");
+  });
+
+  it("falls back when the cited logical experience is absent from the approved content", async () => {
+    const lookup: JdFitLabelLookup = async () => [approvedRow(R1, [experience("exp-other", "project", "Other", [])])];
+    const citation = await citationFor(makeHit({ chunkRowId: "c1", text: "Built TypeScript REST APIs." }), lookup);
+    assert.equal(citation.experience_title, null);
+    assert.deepEqual(citation.evidence_kinds, []);
   });
 });

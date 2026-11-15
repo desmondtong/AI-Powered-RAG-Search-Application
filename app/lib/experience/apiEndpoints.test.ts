@@ -3,7 +3,12 @@ import assert from "node:assert/strict";
 import Module from "node:module";
 import { describe, it } from "node:test";
 import { ExperienceApiError } from "./apiRoutes";
-import { uploadExperienceSourceFromFile, type ExperienceServiceClient } from "./apiService";
+import {
+  getExperienceSourceDetail,
+  listExperienceSources,
+  uploadExperienceSourceFromFile,
+  type ExperienceServiceClient,
+} from "./apiService";
 import { EXPERIENCE_SOURCES_BUCKET } from "./sourceStorage";
 
 interface MockServiceExports {
@@ -159,6 +164,198 @@ class MockDuplicateUploadClient {
     return { data: null, error: { message: `Unexpected RPC ${functionName}` } };
   }
 }
+
+type TableRow = Record<string, unknown>;
+
+class MockReadBuilder {
+  private readonly predicates: Array<(row: TableRow) => boolean> = [];
+  private orderBy: { key: string; ascending: boolean } | null = null;
+  private maxRows: number | null = null;
+
+  constructor(private readonly rows: TableRow[]) {}
+
+  select() {
+    return this;
+  }
+
+  eq(key: string, value: unknown) {
+    this.predicates.push((row) => row[key] === value);
+    return this;
+  }
+
+  is(key: string, value: unknown) {
+    this.predicates.push((row) => (row[key] ?? null) === value);
+    return this;
+  }
+
+  not(key: string, operator: string, value: unknown) {
+    assert.equal(operator, "is");
+    this.predicates.push((row) => (row[key] ?? null) !== value);
+    return this;
+  }
+
+  in(key: string, values: unknown[]) {
+    this.predicates.push((row) => values.includes(row[key]));
+    return this;
+  }
+
+  order(key: string, options: { ascending?: boolean } = {}) {
+    this.orderBy = { key, ascending: options.ascending ?? true };
+    return this;
+  }
+
+  limit(value: number) {
+    this.maxRows = value;
+    return this;
+  }
+
+  then(resolve: (value: { data: TableRow[]; error: null }) => void) {
+    let rows = this.rows.filter((row) => this.predicates.every((predicate) => predicate(row)));
+    if (this.orderBy) {
+      const { key, ascending } = this.orderBy;
+      rows = [...rows].sort((a, b) => (String(a[key]) < String(b[key]) ? -1 : 1) * (ascending ? 1 : -1));
+    }
+    if (this.maxRows !== null) {
+      rows = rows.slice(0, this.maxRows);
+    }
+    return Promise.resolve({ data: structuredClone(rows), error: null }).then(resolve);
+  }
+}
+
+class MockVersionReadClient {
+  readonly queries: string[] = [];
+
+  constructor(private readonly tables: Record<string, TableRow[]>) {}
+
+  from(table: string) {
+    this.queries.push(table);
+    return new MockReadBuilder(this.tables[table] ?? []);
+  }
+}
+
+function sourceRow(id: string, overrides: TableRow = {}): TableRow {
+  return {
+    id,
+    original_byte_sha256: `hash-${id}`,
+    original_file_name: `${id}.docx`,
+    original_file_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    original_file_size: 10,
+    storage_bucket: EXPERIENCE_SOURCES_BUCKET,
+    storage_path: `sources/${id}.docx`,
+    status: "draft",
+    latest_extraction_id: null,
+    latest_draft_revision_id: null,
+    latest_approved_revision_id: null,
+    active_revision_id: null,
+    failure: null,
+    cleanup_error: null,
+    deleted_at: null,
+    created_at: "2026-11-01T00:00:00+00:00",
+    updated_at: "2026-11-01T00:00:00+00:00",
+    ...overrides,
+  };
+}
+
+function revisionRow(id: string, sourceId: string, day: number, approved: boolean): TableRow {
+  const stamp = `2026-11-${String(day).padStart(2, "0")}T00:00:00+00:00`;
+  return {
+    id,
+    source_id: sourceId,
+    extraction_id: "extraction-1",
+    status: approved ? "approved" : "draft",
+    draft_json: {},
+    draft_version: 1,
+    approved_json: approved ? {} : null,
+    approved_content_hash: approved ? `hash-${id}` : null,
+    approved_at: approved ? stamp : null,
+    created_at: stamp,
+  };
+}
+
+describe("approved version numbers in source responses", () => {
+  it("numbers every approved revision in detail, beyond the recent revision list", async () => {
+    // Seven revisions: approvals on days 1, 2, 4, 5 and 6; abandoned draft on day 3; open draft on day 7.
+    const revisions = [
+      revisionRow("rev-a", "source-1", 1, true),
+      revisionRow("rev-b", "source-1", 2, true),
+      revisionRow("rev-abandoned", "source-1", 3, false),
+      revisionRow("rev-c", "source-1", 4, true),
+      revisionRow("rev-d", "source-1", 5, true),
+      revisionRow("rev-e", "source-1", 6, true),
+      revisionRow("rev-draft", "source-1", 7, false),
+    ];
+    const client = new MockVersionReadClient({
+      experience_sources: [sourceRow("source-1", {
+        status: "draft",
+        latest_draft_revision_id: "rev-draft",
+        latest_approved_revision_id: "rev-e",
+        active_revision_id: "rev-d",
+      })],
+      experience_extractions: [],
+      experience_revisions: revisions,
+    });
+
+    const detail = await getExperienceSourceDetail("source-1", client as unknown as ExperienceServiceClient);
+
+    assert.equal(detail.revisions.length, 5);
+    assert.deepEqual(
+      detail.approved_versions.map((version) => [version.revision_id, version.version_number]),
+      [["rev-a", 1], ["rev-b", 2], ["rev-c", 3], ["rev-d", 4], ["rev-e", 5]],
+    );
+    assert.equal(detail.approved_versions[0].approved_at, "2026-11-01T00:00:00+00:00");
+    assert.equal(detail.source.active_version_number, 4);
+    assert.equal(detail.source.latest_approved_version_number, 5);
+    assert.ok(!detail.approved_versions.some((version) => version.revision_id === "rev-draft"));
+    assert.ok(!detail.approved_versions.some((version) => version.revision_id === "rev-abandoned"));
+    assert.equal(client.queries.filter((table) => table === "experience_revisions").length, 2);
+  });
+
+  it("reports null version numbers for a source that was never approved", async () => {
+    const client = new MockVersionReadClient({
+      experience_sources: [sourceRow("source-1", { latest_draft_revision_id: "rev-draft" })],
+      experience_revisions: [revisionRow("rev-draft", "source-1", 1, false)],
+    });
+
+    const detail = await getExperienceSourceDetail("source-1", client as unknown as ExperienceServiceClient);
+
+    assert.deepEqual(detail.approved_versions, []);
+    assert.equal(detail.source.active_version_number, null);
+    assert.equal(detail.source.latest_approved_version_number, null);
+  });
+
+  it("fills list summaries from one revision read across all sources", async () => {
+    const client = new MockVersionReadClient({
+      experience_sources: [
+        sourceRow("source-1", { status: "indexed", latest_approved_revision_id: "s1-v2", active_revision_id: "s1-v1" }),
+        sourceRow("source-2", { status: "approved", latest_approved_revision_id: "s2-v1" }),
+        sourceRow("source-3", { status: "draft", latest_draft_revision_id: "s3-draft" }),
+      ],
+      experience_revisions: [
+        revisionRow("s1-v1", "source-1", 1, true),
+        revisionRow("s2-v1", "source-2", 2, true),
+        revisionRow("s1-v2", "source-1", 3, true),
+        revisionRow("s3-draft", "source-3", 4, false),
+      ],
+    });
+
+    const { sources } = await listExperienceSources(client as unknown as ExperienceServiceClient);
+    const byId = new Map(sources.map((source) => [source.id, source]));
+
+    assert.equal(byId.get("source-1")?.active_version_number, 1);
+    assert.equal(byId.get("source-1")?.latest_approved_version_number, 2);
+    assert.equal(byId.get("source-2")?.latest_approved_version_number, 1);
+    assert.equal(byId.get("source-2")?.active_version_number, null);
+    assert.equal(byId.get("source-3")?.latest_approved_version_number, null);
+    assert.equal(client.queries.filter((table) => table === "experience_revisions").length, 1);
+  });
+
+  it("skips the revision read when there are no sources", async () => {
+    const client = new MockVersionReadClient({ experience_sources: [] });
+    const { sources } = await listExperienceSources(client as unknown as ExperienceServiceClient);
+    assert.deepEqual(sources, []);
+    assert.deepEqual(client.queries, ["experience_sources"]);
+  });
+});
 
 describe("experience API endpoints", () => {
   it("uploads through the route and returns durable next action metadata", async () => {

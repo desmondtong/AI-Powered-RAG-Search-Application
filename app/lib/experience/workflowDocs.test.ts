@@ -28,19 +28,36 @@ describe("experience browser workflow documentation", () => {
   });
 
   it("keeps documented browser steps wired to the current UI surfaces", () => {
-    const documentsPage = read("app/documents/page.tsx");
-    const reviewClient = read("app/experiences/[id]/ExperienceReviewClient.tsx");
+    const readme = read("app/lib/experience/README.md");
+    const listPage = read("app/experience/page.tsx");
+    const dropZone = read("app/experience/_components/DropZone.tsx");
+    const filePage = read("app/experience/[id]/FilePageClient.tsx");
+    const copy = read("app/lib/experience/workspace/copy.ts");
     const searchPage = read("app/page.tsx");
 
-    assert.match(documentsPage, /Upload Experience/);
-    assert.match(documentsPage, /\/experiences\/\$\{source\.id\}/);
-    assert.match(reviewClient, /Extract/);
-    assert.match(reviewClient, /Parse/);
-    assert.match(reviewClient, /Save Draft/);
-    assert.match(reviewClient, /Approve/);
-    assert.match(reviewClient, /Index/);
-    assert.match(reviewClient, /Inspect Accepted JSON/);
-    assert.match(reviewClient, /Download Original/);
+    assert.match(listPage, /<DropZone \/>/);
+    assert.match(read("app/experience/_components/ExperienceRow.tsx"), /`\/experience\/\$\{source\.id\}`/);
+    assert.match(dropZone, /router\.push\(`\/experience\/\$\{sourceId\}`\)/);
+    assert.match(filePage, /toStageView\(/);
+    assert.match(filePage, /<ApprovalGate/);
+
+    for (const label of [
+      "Upload experience file",
+      "Start review",
+      "Save & approve",
+      "Index now",
+      "Download original",
+      "Inspect accepted JSON",
+      "Continue processing",
+      "Save draft",
+    ]) {
+      assert.match(copy, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `copy is missing ${label}`);
+      assert.match(readme, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `README is missing ${label}`);
+    }
+    assert.match(readme, /`\/experience`/);
+    assert.match(readme, /`\/experience\/\[id\]`/);
+    assert.doesNotMatch(readme.slice(readme.indexOf("## Browser Workflow"), readme.indexOf("## Preflight Checks")), /\/documents|Upload Experience|Edit Approved/);
+
     assert.match(searchPage, /<JdFitPanel \/>/);
     assert.doesNotMatch(searchPage, /\/api\/experiences/);
   });

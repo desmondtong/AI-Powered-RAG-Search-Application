@@ -1,26 +1,241 @@
 @import "tailwindcss";
 
+/*
+ * JD Fit Check · Porcelain & Cobalt.
+ * Every colour is a semantic token. Light values live on :root; the dark set overrides them when the operating
+ * system prefers a dark scheme. Components use only the utilities mapped in @theme below, never `dark:` variants
+ * or literal hex values, so switching theme is a token swap.
+ *
+ * Semantic jobs: cobalt = actions and sourced evidence; sand = unassigned text; amber = needs attention;
+ * green = done; red = destructive or failed only.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  color-scheme: light;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --ground: #f4f6f9;
+  --card: #ffffff;
+  --raised: #ffffff;
+  --raised-shadow: 0 8px 24px rgba(17, 24, 39, 0.08);
+  --subtle: #fafbfd;
+  --hairline: #d5dbe5;
+  --hairline-strong: #94a3b8;
+
+  --ink: #111827;
+  --ink-secondary: #475569;
+  --ink-muted: #64748b;
+  --ink-subtle: #94a3b8;
+
+  --cobalt: #1f3a93;
+  --cobalt-hover: #172e77;
+  --on-cobalt: #ffffff;
+
+  --evidence-wash: #e8eeff;
+  --evidence-border: #88a5e8;
+  --evidence-text: #162c6e;
+
+  --sand-wash: #f9f4eb;
+  --sand-border: #e4d5bc;
+  --sand-label: #86662d; /* AA on sand wash (4.85:1); design value #8d6b30 was 4.48:1 */
+
+  --amber: #d97706;
+  --amber-wash: #fef3c7;
+  --amber-border: #fde68a;
+  --amber-text: #92400e;
+
+  --green: #15803d;
+  --green-wash: #dcfce7;
+  --green-border: #bbf7d0;
+
+  --red: #c81e1e; /* AA for red text on red wash (4.7:1); design value #dc2626 was 3.95:1 */
+  --red-wash: #fee2e2;
+  --red-border: #fecaca;
+
+  --disabled-bg: #e2e8f0;
+  --disabled-text: #94a3b8;
+
+  --fit-strong: #15803d;
+  --fit-strong-wash: #dcfce7;
+  --fit-partial: #b45309;
+  --fit-partial-wash: #fef3c7;
+  --fit-weak: #475569;
+  --fit-weak-wash: #e6eaf0;
+  --fit-missing: #991b1b;
+  --fit-missing-wash: #fee2e2;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    color-scheme: dark;
+
+    --ground: #0f1218;
+    --card: #151a24;
+    --raised: #19212e;
+    --raised-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    --subtle: #19212e;
+    --hairline: #252f3f;
+    --hairline-strong: #2e3b4e;
+
+    --ink: #e4e8ee;
+    --ink-secondary: #98a5b7;
+    --ink-muted: #7d8a9c; /* AA on card, ground and subtle; design value #657285 was 3.57:1 on card */
+    --ink-subtle: #657285;
+
+    --cobalt: #6f8be8;
+    --cobalt-hover: #5c79da;
+    --on-cobalt: #0b1019;
+
+    --evidence-wash: rgba(111, 139, 232, 0.16);
+    --evidence-border: #6f8be8;
+    --evidence-text: #e4e8ee;
+
+    --sand-wash: rgba(220, 190, 140, 0.12);
+    --sand-border: rgba(220, 190, 140, 0.28);
+    --sand-label: #dcc296;
+
+    --amber: #e0a045;
+    --amber-wash: rgba(224, 160, 69, 0.12);
+    --amber-border: rgba(224, 160, 69, 0.3);
+    --amber-text: #e0a045;
+
+    --green: #52b788;
+    --green-wash: rgba(82, 183, 136, 0.14);
+    --green-border: rgba(82, 183, 136, 0.3);
+
+    --red: #e56b6f;
+    --red-wash: rgba(229, 107, 111, 0.14);
+    --red-border: rgba(229, 107, 111, 0.3);
+
+    --disabled-bg: #181f2c;
+    --disabled-text: #657285;
+
+    --fit-strong: #52b788;
+    --fit-strong-wash: rgba(82, 183, 136, 0.14);
+    --fit-partial: #e0a045;
+    --fit-partial-wash: rgba(224, 160, 69, 0.12);
+    --fit-weak: #98a5b7;
+    --fit-weak-wash: rgba(152, 165, 183, 0.12);
+    --fit-missing: #e56b6f;
+    --fit-missing-wash: rgba(229, 107, 111, 0.12);
   }
 }
 
+@theme inline {
+  /* Only semantic colours exist; Tailwind's default palette is removed so nothing bypasses the tokens. */
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --color-ground: var(--ground);
+  --color-card: var(--card);
+  --color-raised: var(--raised);
+  --color-subtle: var(--subtle);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+
+  --color-ink: var(--ink);
+  --color-ink-secondary: var(--ink-secondary);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-subtle: var(--ink-subtle);
+
+  --color-cobalt: var(--cobalt);
+  --color-cobalt-hover: var(--cobalt-hover);
+  --color-on-cobalt: var(--on-cobalt);
+
+  --color-evidence-wash: var(--evidence-wash);
+  --color-evidence-border: var(--evidence-border);
+  --color-evidence-text: var(--evidence-text);
+
+  --color-sand-wash: var(--sand-wash);
+  --color-sand-border: var(--sand-border);
+  --color-sand-label: var(--sand-label);
+
+  --color-amber: var(--amber);
+  --color-amber-wash: var(--amber-wash);
+  --color-amber-border: var(--amber-border);
+  --color-amber-text: var(--amber-text);
+
+  --color-green: var(--green);
+  --color-green-wash: var(--green-wash);
+  --color-green-border: var(--green-border);
+
+  --color-red: var(--red);
+  --color-red-wash: var(--red-wash);
+  --color-red-border: var(--red-border);
+
+  --color-disabled-bg: var(--disabled-bg);
+  --color-disabled-text: var(--disabled-text);
+
+  --color-fit-strong: var(--fit-strong);
+  --color-fit-strong-wash: var(--fit-strong-wash);
+  --color-fit-partial: var(--fit-partial);
+  --color-fit-partial-wash: var(--fit-partial-wash);
+  --color-fit-weak: var(--fit-weak);
+  --color-fit-weak-wash: var(--fit-weak-wash);
+  --color-fit-missing: var(--fit-missing);
+  --color-fit-missing-wash: var(--fit-missing-wash);
+
+  --shadow-raised: var(--raised-shadow);
+
+  --radius-control: 8px;
+  --radius-panel: 14px;
+
+  --font-heading: var(--font-nunito-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-source-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-source-sans), ui-sans-serif, system-ui, sans-serif;
+
+  --text-headline-xl: 32px;
+  --text-headline-xl--line-height: 40px;
+  --text-headline-xl--font-weight: 700;
+  --text-headline-lg: 24px;
+  --text-headline-lg--line-height: 32px;
+  --text-headline-lg--font-weight: 700;
+  --text-headline-md: 18px;
+  --text-headline-md--line-height: 26px;
+  --text-headline-md--font-weight: 700;
+  --text-title-sm: 16px;
+  --text-title-sm--line-height: 24px;
+  --text-title-sm--font-weight: 600;
+  --text-body-lg: 16px;
+  --text-body-lg--line-height: 26px;
+  --text-body-md: 14px;
+  --text-body-md--line-height: 22px;
+  --text-body-sm: 13px;
+  --text-body-sm--line-height: 18px;
+  --text-label-md: 12px;
+  --text-label-md--line-height: 16px;
+  --text-label-md--font-weight: 600;
+  --text-label-caps: 11px;
+  --text-label-caps--line-height: 14px;
+  --text-label-caps--font-weight: 600;
+  --text-label-caps--letter-spacing: 0.08em;
+}
+
+html {
+  background: var(--ground);
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-source-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-nunito-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+:focus-visible {
+  outline: 2px solid var(--cobalt);
+  outline-offset: 2px;
+}
+
+/* In the base layer so highlight utilities on <mark> (evidence wash, citation emphasis) win over the reset. */
+@layer base {
+  mark {
+    background: transparent;
+    color: inherit;
+  }
 }

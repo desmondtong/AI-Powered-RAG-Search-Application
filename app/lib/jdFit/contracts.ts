@@ -76,6 +76,14 @@ export const JdFitSourceSpanSchema = z
   .strict()
   .refine((span) => span.end > span.start, { message: "Source span end must be after start." });
 
+/** Mirrors the ingestion experience types; kept local because JD-fit may not import ingestion contracts. */
+export const JD_FIT_EXPERIENCE_TYPES = ["project", "general-experience"] as const;
+export type JdFitExperienceType = (typeof JD_FIT_EXPERIENCE_TYPES)[number];
+
+/** Mirrors the ingestion evidence kinds, in the same order. */
+export const JD_FIT_EVIDENCE_KINDS = ["background", "responsibility", "contribution", "challenge", "decision", "outcome"] as const;
+export type JdFitEvidenceKind = (typeof JD_FIT_EVIDENCE_KINDS)[number];
+
 export const JdFitCitationSchema = z
   .object({
     evidence_handle: evidenceHandleSchema,
@@ -87,6 +95,10 @@ export const JdFitCitationSchema = z
     logical_parent_id: z.string().min(1),
     logical_chunk_id: z.string().min(1).nullable(),
     evidence_logical_ids: z.array(z.string().min(1)),
+    /** Labels read from the cited revision's approved content; never model-generated. */
+    experience_title: z.string().min(1).nullable(),
+    experience_type: z.enum(JD_FIT_EXPERIENCE_TYPES),
+    evidence_kinds: z.array(z.enum(JD_FIT_EVIDENCE_KINDS)),
     source_span: JdFitSourceSpanSchema,
     quote: z.string().min(1),
   })

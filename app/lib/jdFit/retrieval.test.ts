@@ -172,6 +172,9 @@ describe("JD-fit evidence context", () => {
       logical_parent_id: "exp-atlas:parent-1",
       logical_chunk_id: hit.logical_chunk_id,
       evidence_logical_ids: ["exp-atlas:ev-3", "exp-atlas:ev-4"],
+      experience_title: null,
+      experience_type: "project",
+      evidence_kinds: [],
       source_span: { block_id: "b7", start: 12, end: 12 + hit.child_text.length },
       quote: "Cut deploy time by 40%.",
     });

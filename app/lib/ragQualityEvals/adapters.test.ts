@@ -11,7 +11,7 @@ import {
 import { identityKey, sameRevision } from "./anchors";
 import { buildOfflineCorpusIndex } from "./corpusIndex";
 import { loadRagEvalFixtures } from "./fixtures";
-import { runRagEval } from "./runner";
+import { observeFixture, retainedExports, runRagEval } from "./runner";
 
 describe("rag-eval offline adapters", () => {
   it("records every search call with a copy of its options and the hits returned", async () => {
@@ -49,6 +49,32 @@ describe("rag-eval offline adapters", () => {
     assert.deepEqual(assessments.find((entry) => entry.requirement_id === "R2")!.evidence_handles, ["E7"]);
     assert.deepEqual(assessments.find((entry) => entry.requirement_id === "R1")!.evidence_handles, [], "passages not in the prompt are not cited");
     assert.deepEqual(deps.client.calls.map((call) => call.phase), ["report"]);
+  });
+
+  it("labels offline citations from the synthesized approved exports", async () => {
+    const index = buildOfflineCorpusIndex(loadRagEvalFixtures());
+    const corpus = index.fixtures.find((entry) => entry.fixture.fixture_id === "strong-match")!;
+    const activeExport = index.revisions.get(identityKey(corpus.active))!.export;
+    const deps = createOfflineDependencies(corpus, activeExport, retainedExports(index));
+    const observation = await observeFixture(corpus, deps);
+    const citations = observation.response!.assessments.flatMap((assessment) => assessment.citations);
+    assert.ok(citations.length > 0);
+    const experiences = new Map(activeExport.revision.experiences.map((experience) => [experience.logical_id, experience]));
+    for (const citation of citations) {
+      const experience = experiences.get(citation.logical_experience_id)!;
+      assert.equal(citation.experience_title, experience.title.value);
+      assert.equal(citation.experience_type, experience.type);
+      assert.ok(citation.evidence_kinds.length > 0, "cited evidence kinds come from the approved export");
+    }
+  });
+
+  it("scopes the offline label lookup to the requested revisions and sources", async () => {
+    const index = buildOfflineCorpusIndex(loadRagEvalFixtures());
+    const corpus = index.fixtures.find((entry) => entry.fixture.fixture_id === "active-vs-latest")!;
+    const deps = createOfflineDependencies(corpus, index.revisions.get(identityKey(corpus.active))!.export, retainedExports(index));
+    const rows = await deps.labelLookup([corpus.active.revision_id], [corpus.source_id]);
+    assert.deepEqual(rows.map((row) => row.id), [corpus.active.revision_id]);
+    assert.deepEqual(await deps.labelLookup([corpus.active.revision_id], ["other-source"]), []);
   });
 
   it("throws a configuration error instead of constructing a real model, Supabase, or Storage client", async () => {

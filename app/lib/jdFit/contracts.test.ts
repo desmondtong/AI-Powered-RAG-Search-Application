@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { EvidenceKindSchema, ExperienceTypeSchema } from "../experience/contracts";
 import {
+  JD_FIT_EVIDENCE_KINDS,
+  JD_FIT_EXPERIENCE_TYPES,
   JdFitAssessmentSchema,
+  JdFitCitationSchema,
   JdFitError,
   JdFitRequestSchema,
   JdFitResponseSchema,
@@ -33,6 +37,9 @@ export function validResponseFixture(): JdFitResponse {
             logical_parent_id: "exp-atlas:parent-1",
             logical_chunk_id: "exp-atlas:chunk-1",
             evidence_logical_ids: ["exp-atlas:ev-1"],
+            experience_title: "Project Atlas",
+            experience_type: "project",
+            evidence_kinds: ["contribution"],
             source_span: { block_id: "b1", start: 0, end: 40 },
             quote: "Built TypeScript REST APIs for billing.",
           },
@@ -99,6 +106,26 @@ describe("JD-fit contracts", () => {
       JdFitAssessmentSchema.safeParse({ ...response.assessments[1], citations: response.assessments[0].citations }).success,
       false,
     );
+  });
+
+  it("requires citation context labels and accepts unresolved ones", () => {
+    const citation = validResponseFixture().assessments[0].citations[0];
+    assert.equal(JdFitCitationSchema.safeParse(citation).success, true);
+    for (const field of ["experience_title", "experience_type", "evidence_kinds"] as const) {
+      const without: Record<string, unknown> = { ...citation };
+      delete without[field];
+      assert.equal(JdFitCitationSchema.safeParse(without).success, false, `${field} is required`);
+    }
+    const unresolved = { ...citation, experience_title: null, experience_type: "general-experience", evidence_kinds: [] };
+    assert.equal(JdFitCitationSchema.safeParse(unresolved).success, true);
+    assert.equal(JdFitCitationSchema.safeParse({ ...citation, experience_title: "" }).success, false);
+    assert.equal(JdFitCitationSchema.safeParse({ ...citation, experience_type: "job" }).success, false);
+    assert.equal(JdFitCitationSchema.safeParse({ ...citation, evidence_kinds: ["skill"] }).success, false);
+  });
+
+  it("keeps citation label enums in step with the ingestion contracts", () => {
+    assert.deepEqual([...JD_FIT_EXPERIENCE_TYPES], ExperienceTypeSchema.options);
+    assert.deepEqual([...JD_FIT_EVIDENCE_KINDS], EvidenceKindSchema.options);
   });
 
   it("requires gaps to mirror weak and missing assessments", () => {

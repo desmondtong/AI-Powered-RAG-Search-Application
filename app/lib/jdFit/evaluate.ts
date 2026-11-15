@@ -22,12 +22,13 @@ import {
 import { JdFitDeadline, getJdFitModelClient, type JdFitModelClient } from "./generation";
 import { generateFitReport } from "./report";
 import { extractJdRequirements, normalizeJdText } from "./requirements";
-import { retrieveRequirementEvidence, type JdFitSearch } from "./retrieval";
+import { resolveCitationLabels, retrieveRequirementEvidence, type JdFitLabelLookup, type JdFitSearch } from "./retrieval";
 import { noEvidenceAssessments } from "./validation";
 
 export interface EvaluateJobDescriptionDependencies {
   client?: JdFitModelClient;
   search?: JdFitSearch;
+  labelLookup?: JdFitLabelLookup;
   now?: () => number;
   deadlineMs?: number;
   model?: string;
@@ -77,6 +78,7 @@ export async function evaluateJobDescription(
   if (noEvidence) {
     assessments = noEvidenceAssessments(requirements);
   } else {
+    await resolveCitationLabels({ evidence: context.evidence, deadline, lookup: dependencies.labelLookup });
     const report = await generateFitReport({ requirements, context, client, deadline, model, maxOutputTokens });
     assessments = report.assessments;
     reportGenerated = true;

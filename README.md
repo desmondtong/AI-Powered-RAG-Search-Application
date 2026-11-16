@@ -19,7 +19,6 @@ Create `.env.local` with:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=your-supabase-publishable-key
 SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
 GEMINI_API_KEY=your-google-ai-studio-key
 ```
@@ -53,6 +52,12 @@ The evidence index is the application's only retrieval model:
   input (`embedding_text`), a 1536-dimensional vector, metadata, and chunk order.
   Each child references one parent; deleting that parent cascades to its chunks.
 
+The Experience pages are backed by a separate registry that tracks each file
+through the six stages: `experience_sources`, `experience_extractions`,
+`experience_revisions`, `experience_revision_parents`, and
+`experience_index_staging`. Its migrations live alongside the evidence ones in
+`supabase/migrations/`.
+
 Apply the SQL files in `supabase/migrations/` in filename order using the
 Supabase SQL editor or the MCP `apply_migration` tool with write access enabled
 on a development project. Do not reapply migrations already recorded there.
@@ -71,9 +76,11 @@ expand matched parents, and delete evidence parents. They do not perform
 structured LLM extraction or JD-fit evaluation. Metadata and embedding headers must come from the source
 or trusted user-provided fields, not invented claims.
 
-Run `supabase/checks/evidence_index.sql` in the SQL editor or via MCP
-`execute_sql` for a seeded vector-search and lifecycle smoke check. It rolls
-back its own data. The corresponding rollback SQL is in
+`supabase/checks/` holds smoke checks you can run in the SQL editor or via MCP
+`execute_sql`; each rolls back its own data. `evidence_index.sql` seeds a
+vector-search and lifecycle check, and the `experience_*.sql` files cover the
+experience registry, retry lifecycle and guards, and index-execution fencing.
+The corresponding rollback SQL is in
 `supabase/rollback/evidence_index.sql`; it deletes the new evidence model,
 so use it only after disabling evidence callers and confirming that no evidence
 data needs preservation. It leaves the orphaned objects below untouched.
@@ -93,34 +100,25 @@ script in this repository manages them.
 
 ## Getting Started
 
-### Supabase MCP (TRAE)
+### Supabase MCP
 
-In **Settings > MCP**, enable **Project MCP**. Create `.trae/mcp.json`
-with the following project-scoped, read-only configuration:
+To let your agent or IDE inspect the database, connect it to the project-scoped,
+read-only Supabase MCP server:
 
-```json
-{
-  "mcpServers": {
-    "supabase": {
-      "url": "https://mcp.supabase.com/mcp?project_ref=lwljmmfcvmbnrfstltzj&read_only=true"
-    }
-  }
-}
+```
+https://mcp.supabase.com/mcp?project_ref=lwljmmfcvmbnrfstltzj&read_only=true
 ```
 
-Authenticate the server using the Supabase login flow when prompted, selecting
-the organization that owns this project. Do not put the application's
-publishable key or service-role key in the MCP configuration. If the client
-does not offer a login flow, complete authentication using a supported MCP
-client rather than committing credentials.
+Authenticate using the Supabase login flow when prompted, selecting the
+organization that owns this project. Do not put the application's service-role
+key in any MCP configuration, and never commit credentials.
 
 Verify the connection by asking: "Use Supabase MCP to list this project's
-tables." The server is read-only by default. Remove `&read_only=true` only
-when you intentionally need write access, such as applying migrations, and
-use a development project rather than production.
+tables." Remove `&read_only=true` only when you intentionally need write
+access, such as applying migrations, and use a development project rather
+than production.
 
-See the [Supabase MCP documentation](https://supabase.com/docs/guides/getting-started/mcp)
-and [TRAE project MCP setup](https://docs.trae.ai/ide/add-mcp-servers).
+See the [Supabase MCP documentation](https://supabase.com/docs/guides/getting-started/mcp).
 
 First, run the development server:
 
@@ -136,21 +134,6 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to load Nunito Sans (headings) and Source Sans 3 (body text) from Google Fonts.
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See the [Next.js documentation](https://nextjs.org/docs) for framework details and [deployment options](https://nextjs.org/docs/app/building-your-application/deploying).

@@ -202,3 +202,34 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to load Nunito Sans (headings) and Source Sans 3 (body text) from Google Fonts.
 
 See the [Next.js documentation](https://nextjs.org/docs) for framework details and [deployment options](https://nextjs.org/docs/app/building-your-application/deploying).
+
+## Branches and CI
+
+Work is organised around OpenSpec changes, and the git rules follow from that.
+
+- **One branch per change, named after the change id.** Cut it from `main` before the proposal is committed:
+
+  ```bash
+  git switch -c <change-id> main
+  ```
+
+- **All three commits land on the branch**: `docs: propose <change-id>`, the implementation, and `chore: archive <change-id>` as the last commit. `main` therefore never holds an active change.
+- **`main` is updated only through a pull request**, merged with "rebase and merge" once both CI checks are green. The branch is deleted on merge, locally and on origin.
+- **Parallel changes use one git worktree each**, outside the repository, with its own install and env file:
+
+  ```bash
+  git worktree add ../rag-worktrees/<change-id> -b <change-id> main
+  cp .env.local ../rag-worktrees/<change-id>/.env.local
+  (cd ../rag-worktrees/<change-id> && npm ci)
+  ```
+
+  Every worktree shares the same remote Supabase project, so only one in-flight change may touch `supabase/` at a time. A second worktree running the browser test needs its own port: `EXPERIENCE_PREVIEW_PORT=3034 npm run test:browser`.
+
+CI runs on every pull request and on pushes to `main` ([ci.yml](.github/workflows/ci.yml)), as two required checks:
+
+| Job | Runs |
+| --- | --- |
+| `checks` | `npm run test:experience`, `npm run test:jd-fit`, `npm run lint`, `npx tsc --noEmit`, `npm run build` |
+| `browser` | `npx playwright install --with-deps chromium`, then `npm run test:browser` |
+
+`npm run test:browser` builds the app, serves it on port 3033, drives the four indexing-conflict scenarios in headless Chromium with every API call intercepted, and stops the server. It never reaches Supabase or Gemini, so CI uses placeholder values for the environment variables the build reads. Locally, install the browser once with `npx playwright install chromium`; if a server is left behind after an interrupted run, `lsof -i :3033` finds it.

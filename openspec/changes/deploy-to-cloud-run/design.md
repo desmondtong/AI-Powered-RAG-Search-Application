@@ -111,7 +111,7 @@ Add a `deploy` job to `ci.yml` with `needs: [checks, browser]` and `if: github.e
 
 ### 9. Deployment identifier
 
-- Set `deploymentId: process.env.NEXT_DEPLOYMENT_ID` in `next.config.ts`.
+- Next reads the `NEXT_DEPLOYMENT_ID` environment variable during `next build` natively, so `next.config.ts` needs no `deploymentId` entry.
 - The Docker build receives `--build-arg NEXT_DEPLOYMENT_ID=<sha>`, set as `ENV` in the build stage only.
 - Unset locally and in the CI check jobs, which keeps current behavior.
 - *Why:* Next then appends `?dpl=` to assets, sends `x-deployment-id`, and does a hard reload when the deployed version changes. That meets "Consistent client version across deploys" without a shared cache.

@@ -1,0 +1,44 @@
+# Keep the build context to what `npm ci` and `next build` need. Secrets never enter the image:
+# env files are excluded here, and the hosted service reads its keys from Secret Manager at runtime.
+
+# Secrets and local config (patterns are anchored to the context root, so cover nested folders too)
+.env*
+**/.env*
+*.pem
+**/*.pem
+
+# Dependencies and build output (rebuilt inside the image)
+node_modules
+.next
+out
+build
+*.tsbuildinfo
+next-env.d.ts
+
+# Test and eval build output
+.experience-test-build
+.jd-fit-test-build
+.rag-eval-test-build
+.rag-eval
+coverage
+
+# Tooling, planning, docs and database migrations (not part of the runtime)
+.git
+.github
+.claude
+.agents
+.vercel
+openspec
+supabase
+docs
+scripts
+*.md
+!README.md
+
+# Container files themselves
+Dockerfile
+.dockerignore
+
+# OS noise
+.DS_Store
+npm-debug.log*

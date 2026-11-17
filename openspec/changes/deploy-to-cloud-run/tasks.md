@@ -4,16 +4,16 @@ Work happens on branch `deploy-to-cloud-run` (worktree `.claude/worktrees/deploy
 
 ## 1. Container build
 
-- [ ] 1.1 Add `output: "standalone"` and `deploymentId: process.env.NEXT_DEPLOYMENT_ID` to `next.config.ts`. Verify `npm run build` still passes with the CI placeholder env, and that `.next/standalone/server.js` exists.
-- [ ] 1.2 Add `.dockerignore` excluding `node_modules`, `.next`, `.env*`, `.git`, `.claude`, `openspec`, `supabase` and the `.*-test-build` folders. Verify with `git check-ignore`-style review that no `.env*` file can enter the build context.
+- [x] 1.1 Add `output: "standalone"` to `next.config.ts` (Next reads `NEXT_DEPLOYMENT_ID` natively at build time, so no `deploymentId` entry is needed). Verify `npm run build` still passes with the CI placeholder env, and that `.next/standalone/server.js` exists.
+- [x] 1.2 Add `.dockerignore` excluding `node_modules`, `.next`, `.env*`, `.git`, `.claude`, `openspec`, `supabase` and the `.*-test-build` folders. Verify with `git check-ignore`-style review that no `.env*` file can enter the build context.
 - [ ] 1.3 Add a multi-stage `Dockerfile` (Node `26.2.0-bookworm-slim`; build stage with `ARG NEXT_DEPLOYMENT_ID` and no `NEXT_PUBLIC_*`; runtime stage with `poppler-utils`, the non-root `node` user, `HOSTNAME=0.0.0.0` and `CMD ["node","server.js"]`). Verify in a GitHub Actions run, or locally if Docker is present, that the image builds.
 - [ ] 1.4 Verify in the built image that `pdftotext -v` runs and that `grep -r` over `/app` finds neither `127.0.0.1:54321` nor any `supabase.co` URL. If the build fails without `NEXT_PUBLIC_SUPABASE_URL`, apply design Decision 5's fallback (server-only `SUPABASE_URL` that takes precedence in `app/lib/supabaseServer.ts`) with a unit test and README env update, then re-verify.
 
 ## 2. Early upload size check
 
-- [ ] 2.1 Export the upload byte limit and an oversized-file message builder from `app/lib/experience/uploadUi.ts`, sourced from the same 10 MB value as `EXPERIENCE_EXTRACTION_LIMITS.maxUploadBytes` without pulling server-only modules into the client bundle. Verify with a unit test that the value equals the server limit and the message names "10 MB".
-- [ ] 2.2 In `app/experience/_components/DropZone.tsx`, reject files over the limit before building `FormData`, show the message in the existing error slot, and send no request. Verify with a contract test that the oversized path makes no `fetch` call and the zone stays usable.
-- [ ] 2.3 Extend `retryConflicts.browser.mjs` (or the browser test suite behind `npm run test:browser`) with an oversized-file drop that asserts the message and zero upload requests. Verify `npm run test:browser` is green.
+- [x] 2.1 Export the upload byte limit and an oversized-file message builder from `app/lib/experience/uploadUi.ts`, sourced from the same 10 MB value as `EXPERIENCE_EXTRACTION_LIMITS.maxUploadBytes` without pulling server-only modules into the client bundle. Verify with a unit test that the value equals the server limit and the message names "10 MB".
+- [x] 2.2 In `app/experience/_components/DropZone.tsx`, reject files over the limit before building `FormData`, show the message in the existing error slot, and send no request. Verify with a contract test that the oversized path makes no `fetch` call and the zone stays usable.
+- [x] 2.3 Extend `retryConflicts.browser.mjs` (or the browser test suite behind `npm run test:browser`) with an oversized-file drop that asserts the message and zero upload requests. Verify `npm run test:browser` is green.
 
 ## 3. One-time GCP setup **[owner]**
 

@@ -178,6 +178,52 @@ try {
     reports.push({ scenario, status: "PASS", posts, detailReads: reads, externalRequests: unexpected.length });
     await context.close();
   }
+
+  {
+    // A file over the 10 MB upload limit is refused in the drop zone and never sent.
+    const scenario = "oversized-upload";
+    const context = await browser.newContext({ serviceWorkers: "block" });
+    const uploads = [];
+    const unexpected = [];
+    const pageErrors = [];
+    await context.route("**/*", async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      if (url.origin !== base.origin) {
+        unexpected.push(request.url());
+        return route.abort();
+      }
+      if (!url.pathname.startsWith("/api/")) return route.continue();
+      if (url.pathname === "/api/experiences" && request.method() === "GET") return route.fulfill({ json: { sources: [] } });
+      if (url.pathname === "/api/experiences" && request.method() === "POST") {
+        uploads.push(request.url());
+        return route.abort();
+      }
+      unexpected.push(request.url());
+      return route.abort();
+    });
+    const page = await context.newPage();
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    await page.goto(new URL("/experience", base).href);
+    const input = page.locator('input[type="file"]');
+    await input.waitFor({ state: "attached" });
+    await input.setInputFiles({
+      name: "Oversized experience.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.alloc(10 * 1024 * 1024 + 1),
+    });
+    const alert = page.getByRole("alert").filter({ hasText: "larger than 10 MB" });
+    await alert.waitFor();
+    assert.match(await alert.innerText(), /This file is larger than 10 MB\. Upload a smaller or split document\./);
+    await page.waitForTimeout(300);
+    assert.deepEqual(uploads, [], "An oversized file must not be sent");
+    assert.equal(await page.getByRole("button", { name: "Browse files", exact: true }).isEnabled(), true, "The zone stays usable");
+    assert.equal(new URL(page.url()).pathname, "/experience", "The user stays on the list page");
+    assert.deepEqual(pageErrors, []);
+    assert.deepEqual(unexpected, [], "No real or unmocked API request may escape");
+    reports.push({ scenario, status: "PASS", uploads: uploads.length, externalRequests: unexpected.length });
+    await context.close();
+  }
   console.log(JSON.stringify({ status: "PASS", checks: reports }, null, 2));
 } finally {
   await browser.close();

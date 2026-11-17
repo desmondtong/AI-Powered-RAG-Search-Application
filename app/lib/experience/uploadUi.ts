@@ -1,3 +1,4 @@
+import { EXPERIENCE_MAX_UPLOAD_BYTES } from "./uploadLimits";
 import { DROP_ZONE } from "./workspace/copy";
 
 export type DocumentsUploadKind = "experience";
@@ -10,6 +11,9 @@ export interface DocumentsUploadConfig {
   browseLabel: string;
   uploadingLabel: string;
   accept: string;
+  /** Same limit the server enforces; checked before sending so oversized files never leave the browser. */
+  maxBytes: number;
+  tooLargeMessage: string;
 }
 
 const UPLOAD_CONFIGS: Record<DocumentsUploadKind, DocumentsUploadConfig> = {
@@ -21,11 +25,19 @@ const UPLOAD_CONFIGS: Record<DocumentsUploadKind, DocumentsUploadConfig> = {
     browseLabel: DROP_ZONE.browse,
     uploadingLabel: DROP_ZONE.uploading,
     accept: DROP_ZONE.accept,
+    maxBytes: EXPERIENCE_MAX_UPLOAD_BYTES,
+    tooLargeMessage: DROP_ZONE.tooLarge,
   },
 };
 
 export function getDocumentsUploadConfig(kind: DocumentsUploadKind = "experience") {
   return UPLOAD_CONFIGS[kind];
+}
+
+/** The message to show instead of uploading, or null when the file is within the limit. */
+export function oversizedUploadMessage(file: { size: number }, kind: DocumentsUploadKind = "experience"): string | null {
+  const config = UPLOAD_CONFIGS[kind];
+  return file.size > config.maxBytes ? config.tooLargeMessage : null;
 }
 
 export function isDocumentsUploadSuccess(kind: DocumentsUploadKind, responseBody: unknown) {

@@ -11,6 +11,7 @@ import {
   getDocumentsUploadConfig,
   getDocumentsUploadErrorMessage,
   isDocumentsUploadSuccess,
+  oversizedUploadMessage,
   shouldAutostart,
   uploadedSourceId,
 } from "@/app/lib/experience/uploadUi";
@@ -34,6 +35,14 @@ export default function DropZone() {
 
   const upload = async (file: File | undefined) => {
     if (!file || uploading) return;
+    // Oversized files never leave the browser: the hosting front end would refuse very large bodies with its own
+    // non-JSON error before the server's limit check could answer.
+    const tooLarge = oversizedUploadMessage(file);
+    if (tooLarge) {
+      setError(tooLarge);
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
     setError(null);
     setUploading(file.name);
     try {

@@ -76,17 +76,27 @@ jobs:
             "grep -rlE '[a-z]{20}\.supabase\.co|127\.0\.0\.1:54321|ci-dummy' /app --include='*.js' --exclude-dir=node_modules"; then
             echo "::error::A Supabase URL or placeholder was inlined at build time"; exit 1
           fi
-      - name: The server starts and answers
+      - name: The server starts and serves compiled styles
         run: |
           docker run -d --name web -p 8080:8080 \
             -e NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 -e SUPABASE_SERVICE_ROLE_KEY=ci-dummy -e GEMINI_API_KEY=ci-dummy \
             web:ci
+          trap 'docker rm -f web >/dev/null' EXIT
           for _ in $(seq 1 30); do
             code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/ || true)"
-            if [ "$code" = "200" ]; then echo "Fit Check page answered 200"; docker rm -f web >/dev/null; exit 0; fi
+            [ "$code" = "200" ] && break
             sleep 1
           done
-          docker logs web; docker rm -f web >/dev/null; exit 1
+          if [ "$code" != "200" ]; then docker logs web; echo "::error::Fit Check page did not answer 200"; exit 1; fi
+          echo "Fit Check page answered 200"
+          # The page must link a stylesheet in which Tailwind has generated utilities. A build path without the
+          # Tailwind pipeline still serves CSS, but it holds raw @tailwind/@theme source and the page renders unstyled.
+          css_path="$(curl -s http://127.0.0.1:8080/ | grep -oE '/_next/static/[^"?]+\.css' | head -1)"
+          if [ -z "$css_path" ]; then echo "::error::No stylesheet linked from the Fit Check page"; exit 1; fi
+          css="$(curl -s "http://127.0.0.1:8080${css_path}")"
+          if ! grep -q '\.flex{' <<<"$css"; then echo "::error::${css_path} has no generated Tailwind utilities"; exit 1; fi
+          if grep -q '@tailwind' <<<"$css"; then echo "::error::${css_path} still contains raw @tailwind directives"; exit 1; fi
+          echo "Stylesheet ${css_path} has compiled Tailwind utilities"
 
   # Deploys main to Cloud Run after every other job passes. Only this job can request a GitHub OIDC token, and
   # Google Cloud accepts that token only for this repository's main branch (Workload Identity Federation

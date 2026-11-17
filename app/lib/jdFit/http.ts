@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
+import { publicRequestOrigin } from "../publicOrigin";
 import { JdFitError, type JdFitErrorResponse } from "./contracts";
 import { evaluateJobDescription, type EvaluateJobDescriptionDependencies } from "./evaluate";
 
 /**
  * Rejects requests another website made the browser send. Mirrors the experience routes' trusted-read check
  * (Origin must match; Sec-Fetch-Site must be same-origin or a direct navigation) without editing ingestion code.
+ * The expected origin is the public one the browser used (see publicOrigin.ts), so the check holds behind Cloud Run.
  */
 export function assertSameOriginJdFitRequest(req: Request): void {
-  const requestOrigin = new URL(req.url).origin;
   const origin = req.headers.get("origin");
-  if (origin && origin !== requestOrigin) {
+  if (origin && origin !== publicRequestOrigin(req)) {
     throw new JdFitError("cross-origin-rejected", "Cross-origin JD-fit requests are not allowed.", 403);
   }
   const fetchSite = req.headers.get("sec-fetch-site");

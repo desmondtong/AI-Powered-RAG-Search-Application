@@ -103,7 +103,8 @@ Add a `deploy` job to `ci.yml` with `needs: [checks, browser]` and `if: github.e
 ### 8. Hosting-safe origin check
 
 - **Confirmed during apply.** The standalone server was run locally with Cloud Run's headers (`Host: <service>.run.app`, `X-Forwarded-Proto: https`). `req.url` became `https://0.0.0.0:8090/…`: Next applies the forwarded scheme but keeps its listen address as the host. Every hosted mutation was rejected with 403.
-- The fix: `assertSameOriginMutation` and `assertTrustedReadBoundary` compare `Origin` with `publicRequestOrigin(req)`. That origin is built from `x-forwarded-proto` (first value; only `http` or `https` accepted) and `x-forwarded-host` or `host`, falling back to `req.url`. Tests in `app/lib/experience/apiRoutes.test.ts` cover:
+- The fix: `assertSameOriginMutation` and `assertTrustedReadBoundary` compare `Origin` with `publicRequestOrigin(req)`.
+- **A second copy, found on the hosted Fit Check.** The JD-fit route keeps its own guard (`app/lib/jdFit/http.ts`, deliberately separate from ingestion code) with the same `req.url` comparison, so the hosted Fit Check failed with "Cross-origin JD-fit requests are not allowed". `publicRequestOrigin` now lives in `app/lib/publicOrigin.ts`, a module with no dependencies that both guards import. A test scans `app/lib` and `app/api` and fails if any guard compares against `new URL(req.url).origin` again. That origin is built from `x-forwarded-proto` (first value; only `http` or `https` accepted) and `x-forwarded-host` or `host`, falling back to `req.url`. Tests in `app/lib/experience/apiRoutes.test.ts` cover:
   - an https `Origin` against an http `req.url` with `x-forwarded-proto: https` (accepted);
   - a different host (rejected);
   - no forwarded headers (unchanged behavior).

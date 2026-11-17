@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import { assertSameOriginMutation, assertTrustedReadBoundary, ExperienceApiError, publicRequestOrigin } from "./apiRoutes";
 
@@ -72,6 +74,21 @@ describe("origin guards behind a TLS-terminating front end", () => {
     rejected(() => assertSameOriginMutation(post("http://localhost:3000/api/experiences", { origin: "https://example.invalid" })));
     // Requests without an Origin header (same-origin GET navigations, server-to-server) are not mutations to judge.
     assert.doesNotThrow(() => assertSameOriginMutation(post("http://localhost:3000/api/experiences", {})));
+  });
+
+  it("leaves no origin check comparing against the raw request URL", () => {
+    // Behind Cloud Run, req.url carries the listen address, so every origin guard must use publicRequestOrigin.
+    // The JD-fit route once kept its own copy of the old comparison and broke Fit Check on the hosted app.
+    const sourceFiles = (dir: string): string[] =>
+      readdirSync(join(process.cwd(), dir)).flatMap((name) => {
+        const path = `${dir}/${name}`;
+        if (statSync(join(process.cwd(), path)).isDirectory()) return sourceFiles(path);
+        return /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) ? [path] : [];
+      });
+    const offenders = [...sourceFiles("app/lib"), ...sourceFiles("app/api")].filter(
+      (path) => path !== "app/lib/publicOrigin.ts" && /new URL\((req|request)\.url\)\.origin/.test(readFileSync(join(process.cwd(), path), "utf8")),
+    );
+    assert.deepEqual(offenders, [], "origin guards must compare against publicRequestOrigin(req)");
   });
 
   it("applies the same public origin to the private file read boundary", () => {

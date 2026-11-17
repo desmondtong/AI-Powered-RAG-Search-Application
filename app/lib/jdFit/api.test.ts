@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { POST } from "../../api/jd-fit/route";
-import { JdFitErrorResponseSchema, JdFitResponseSchema } from "./contracts";
-import { handleJdFitRequest } from "./http";
+import { JdFitError, JdFitErrorResponseSchema, JdFitResponseSchema } from "./contracts";
+import { assertSameOriginJdFitRequest, handleJdFitRequest } from "./http";
 import type { JdFitSearch } from "./retrieval";
 import { ScriptedModelClient, jsonResponse, makeHit, scriptedSearch } from "./testFixtures";
 
@@ -95,6 +95,21 @@ describe("POST /api/jd-fit", () => {
       assert.equal((await errorOf(response)).code, "cross-origin-rejected");
     }
     assert.equal(client.calls.length, 0);
+  });
+
+  it("accepts a same-origin request behind a TLS-terminating front end and still rejects foreign origins", () => {
+    // What Cloud Run hands the container: plain HTTP on its listen address, the public host and scheme in headers.
+    const hosted = "jd-fit-check-abc123-ts.a.run.app";
+    const behindFrontEnd = (origin: string) =>
+      new Request("https://0.0.0.0:8080/api/jd-fit", {
+        method: "POST",
+        headers: { host: hosted, "x-forwarded-proto": "https", origin, "sec-fetch-site": "same-origin" },
+      });
+    assert.doesNotThrow(() => assertSameOriginJdFitRequest(behindFrontEnd(`https://${hosted}`)));
+    assert.throws(
+      () => assertSameOriginJdFitRequest(behindFrontEnd("https://evil.example")),
+      (error: unknown) => error instanceof JdFitError && error.code === "cross-origin-rejected" && error.status === 403,
+    );
   });
 
   it("reports no active evidence without calling the report model", async () => {

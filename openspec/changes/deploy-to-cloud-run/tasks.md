@@ -22,7 +22,7 @@ Work happens on branch `deploy-to-cloud-run` (worktree `.claude/worktrees/deploy
 - [x] 3.3 Enable `run`, `artifactregistry`, `secretmanager`, `iap`, `iamcredentials`, `sts` and `billingbudgets` APIs. Verify with `gcloud services list --enabled`.
 - [x] 3.4 Create Artifact Registry Docker repository `app` in `australia-southeast1`, with a cleanup policy keeping the 5 latest versions and deleting untagged images after 7 days. Verify with `gcloud artifacts repositories describe app` and `gcloud artifacts repositories list-cleanup-policies app`.
 - [x] 3.5 Create service accounts `jd-fit-runtime` (no project roles) and `github-deployer`. Verify with `gcloud iam service-accounts list`.
-- [ ] 3.6 Create secrets `supabase-service-role-key` and `gemini-api-key` from the owner's values (entered by the owner, never echoed into chat or logs), and grant `jd-fit-runtime` `secretAccessor` on each secret only. Verify with `gcloud secrets get-iam-policy` for each.
+- [x] 3.6 Create secrets `supabase-service-role-key` and `gemini-api-key` from the owner's values (entered by the owner, never echoed into chat or logs), and grant `jd-fit-runtime` `secretAccessor` on each secret only. Verify with `gcloud secrets get-iam-policy` for each.
 - [x] 3.7 Grant `github-deployer`: `roles/run.developer` on the project, `roles/artifactregistry.writer` on repository `app`, and `roles/iam.serviceAccountUser` on `jd-fit-runtime`. Verify with the three IAM policy reads.
 - [x] 3.8 Create Workload Identity pool `github` and OIDC provider `github-actions` with attribute condition `assertion.repository == 'desmondtong/AI-Powered-RAG-Search-Application' && assertion.ref == 'refs/heads/main'`, and allow that principal set to impersonate `github-deployer`. Verify with `gcloud iam workload-identity-pools providers describe`.
 - [x] 3.9 Create the S$15 monthly budget on the billing account, filtered to the project, with thresholds 50%, 90% and 100% including credits. Verify with `gcloud billing budgets list --billing-account=01C6B1-0F539E-43ED31`.
@@ -40,16 +40,16 @@ Work happens on branch `deploy-to-cloud-run` (worktree `.claude/worktrees/deploy
 
 ## 6. First deploy and private access **[owner]**
 
-- [ ] 6.1 Merge the pull request, set the variables (4.3), then run the workflow on `main` with `workflow_dispatch`. Verify that `gcloud run services describe jd-fit-check --region australia-southeast1` shows the commit SHA image tag, the 600 s timeout, 1 GiB, max instances 2 and the runtime service account.
-- [ ] 6.2 Configure the External OAuth consent screen (Testing, test user `kingdesmond1995@gmail.com`) and create a Web OAuth client in the console. Enable IAP on the service and set IAP to use that client. Grant `roles/iap.httpsResourceAccessor` to the owner, and grant `roles/run.invoker` to the IAP service agent. Verify that the IAP settings for the service show the custom client.
-- [ ] 6.3 Verify private access from a signed-out browser window and with `curl https://<service-url>/api/experiences`: both are refused before the app, and Cloud Run logs show no request for them. Then verify the owner's signed-in browser loads Fit Check.
+- [x] 6.1 Merge the pull request, set the variables (4.3), then run the workflow on `main` with `workflow_dispatch`. Verify that `gcloud run services describe jd-fit-check --region australia-southeast1` shows the commit SHA image tag, the 600 s timeout, 1 GiB, max instances 2 and the runtime service account.
+- [x] 6.2 Configure the External OAuth consent screen (Testing, test user `kingdesmond1995@gmail.com`) and create a Web OAuth client in the console. Enable IAP on the service and set IAP to use that client. Grant `roles/iap.httpsResourceAccessor` to the owner, and grant `roles/run.invoker` to the IAP service agent. Verify that the IAP settings for the service show the custom client.
+- [x] 6.3 Verify private access from a signed-out browser window and with `curl https://<service-url>/api/experiences`: both are refused before the app, and Cloud Run logs show no request for them. Then verify the owner's signed-in browser loads Fit Check.
 
 ## 7. Hosted verification
 
-- [ ] 7.1 On the hosted app, save a draft or run another state-changing call. Verify it is accepted, not rejected with 403 `cross-origin-rejected`. Decision 8 was reproduced locally against the standalone server with Cloud Run headers and is already implemented in `app/lib/experience/apiRoutes.ts`, with tests in `apiRoutes.test.ts`.
-- [ ] 7.2 Upload a selectable-text PDF on the hosted app and run it to review. Verify in the extraction snapshot or logs that the Poppler path was used, not `pdf2json`.
+- [x] 7.1 On the hosted app, save a draft or run another state-changing call. Verify it is accepted, not rejected with 403 `cross-origin-rejected`. Decision 8 was reproduced locally against the standalone server with Cloud Run headers and is already implemented in `app/lib/experience/apiRoutes.ts`, with tests in `apiRoutes.test.ts`.
+- [x] 7.2 Upload a selectable-text PDF on the hosted app and run it to review. Verify in the extraction snapshot or logs that the Poppler path was used, not `pdf2json`.
 - [ ] 7.3 Run one file through approve and index, and run one Fit Check evaluation on the hosted app. Verify that both complete and that no request ends with a platform timeout in Cloud Run logs.
-- [ ] 7.4 Drop a file over 10 MB on the hosted drop zone. Verify that the size message appears and no upload request is logged.
+- [x] 7.4 Drop a file over 10 MB on the hosted drop zone. Verify that the size message appears and no upload request is logged.
 - [ ] 7.5 Push a trivial change through a pull request to `main` while a hosted page is open, then navigate. Verify that the new revision serves automatically, carries the new SHA, and that the open page does a full reload on navigation.
 - [ ] 7.6 Browser walkthrough per the project's apply guidance: record the hosted URL, the steps performed for 6.3 and 7.1–7.5, the observed results, and screenshots in the implementation summary.
 

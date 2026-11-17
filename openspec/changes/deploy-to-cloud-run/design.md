@@ -4,7 +4,7 @@
 
 See proposal.md for motivation. Facts that shape the approach:
 
-- **App shape.** Next.js 16.4.6 (App Router, `cacheComponents`, webpack build via `npm run build`), Node 26.2.0 (`.nvmrc`). All data lives in the remote Supabase project in `ap-southeast-2`: Postgres with pgvector RPCs, plus Storage for source files. Gemini is called with an AI Studio API key. There are no scheduled jobs and no background workers.
+- **App shape.** Next.js 16.4.6 (App Router, `cacheComponents`; `npm run build` was `next build --webpack` when this change started, see Decision 13), Node 26.2.0 (`.nvmrc`). All data lives in the remote Supabase project in `ap-southeast-2`: Postgres with pgvector RPCs, plus Storage for source files. Gemini is called with an AI Studio API key. There are no scheduled jobs and no background workers.
 - **Pipeline timing.** Each stage is one bounded request. Extraction is `pdftotext` (10 s) plus one structured call (120 s). Parsing is one 120 s call. Indexing runs one batch of up to 3 chunks within 75 s per request, and the browser repeats the request until done. Execution leases of 90 s and 180 s make an abandoned stage retryable. Client fetches set no timeout.
 - **`pdftotext` is a system binary** ([documentExtraction.ts](../../../app/lib/documentExtraction.ts)), found on `PATH` or through `PDFTOTEXT_PATH`. Without it, PDFs fall back to `pdf2json`.
 - **Same-origin guard.** [apiRoutes.ts](../../../app/lib/experience/apiRoutes.ts) rejects a mutation when the `Origin` header differs from `new URL(req.url).origin`. On Cloud Run, TLS ends at Google's front end and the container receives plain HTTP. If `req.url` reports `http://`, every POST from `https://…run.app` would be rejected with 403.
@@ -134,6 +134,13 @@ Add a `deploy` job to `ci.yml` with `needs: [checks, browser]` and `if: github.e
 - Docker repository `app` in `australia-southeast1`.
 - Cleanup policy: keep the 5 most recent versions of `web`, delete untagged images older than 7 days, and delete any image older than 30 days. Keep rules win over delete rules, so the 5 newest always survive.
 - Keeps storage inside the 0.5 GB free tier.
+
+### 13. One build path: Turbopack
+
+- **Found on the first hosted check.** The deployed page rendered unstyled. `npm run build` used `next build --webpack`, but Tailwind is wired only for Turbopack (the `@tailwindcss/turbopack` rule in `next.config.ts`), and there is no PostCSS config. The webpack build therefore shipped `globals.css` with raw `@tailwind` and `@theme` directives and no generated utilities. `next dev` and the browser test build with Turbopack, which is why nothing caught it.
+- **Fix.** `npm run build` becomes `next build` (Turbopack), so dev, CI, the browser test and the image all use one build path. Webpack had been switched on for a PDF viewer in the removed generic RAG app, and nothing in the current app needs it.
+- **Guard.** The `image` job fetches the page's stylesheet from the running container and fails unless it contains generated utilities (`.flex{`) and no raw `@tailwind`.
+- *Alternative:* add `@tailwindcss/postcss` and a PostCSS config so webpack works too. Rejected: it keeps two build paths that can drift, for no benefit.
 
 ## Risks / Trade-offs
 

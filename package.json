@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build --webpack",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test:experience": "rm -rf .experience-test-build && tsc -p tsconfig.experience-tests.json && node --test \".experience-test-build/app/lib/experience/**/*.test.js\"",

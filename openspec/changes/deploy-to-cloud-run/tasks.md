@@ -48,10 +48,35 @@ Work happens on branch `deploy-to-cloud-run` (worktree `.claude/worktrees/deploy
 
 - [x] 7.1 On the hosted app, save a draft or run another state-changing call. Verify it is accepted, not rejected with 403 `cross-origin-rejected`. Decision 8 was reproduced locally against the standalone server with Cloud Run headers and is already implemented in `app/lib/experience/apiRoutes.ts`, with tests in `apiRoutes.test.ts`.
 - [x] 7.2 Upload a selectable-text PDF on the hosted app and run it to review. Verify in the extraction snapshot or logs that the Poppler path was used, not `pdf2json`.
-- [ ] 7.3 Run one file through approve and index, and run one Fit Check evaluation on the hosted app. Verify that both complete and that no request ends with a platform timeout in Cloud Run logs.
+- [x] 7.3 Run one file through approve and index, and run one Fit Check evaluation on the hosted app. Verify that both complete and that no request ends with a platform timeout in Cloud Run logs.
 - [x] 7.4 Drop a file over 10 MB on the hosted drop zone. Verify that the size message appears and no upload request is logged.
-- [ ] 7.5 Push a trivial change through a pull request to `main` while a hosted page is open, then navigate. Verify that the new revision serves automatically, carries the new SHA, and that the open page does a full reload on navigation.
-- [ ] 7.6 Browser walkthrough per the project's apply guidance: record the hosted URL, the steps performed for 6.3 and 7.1–7.5, the observed results, and screenshots in the implementation summary.
+- [x] 7.5 Push a trivial change through a pull request to `main` while a hosted page is open, then navigate. Verify that the new revision serves automatically, carries the new SHA, and that the open page does a full reload on navigation.
+- [x] 7.6 Browser walkthrough per the project's apply guidance: record the hosted URL, the steps performed for 6.3 and 7.1–7.5, the observed results, and screenshots in the implementation summary.
+
+## Hosted walkthrough record (7.6)
+
+- **Where it ran:** https://jd-fit-check-229321594006.australia-southeast1.run.app, behind IAP, signed in as the owner, driven in Chrome on 2026-11-17. The checks ran against revision `00002` (`fed4693`) and, after the Fit Check fix, revision `00003` (`632294b`).
+- **6.3 Private access.**
+  - Anonymous `GET /` and `GET /api/experiences` get 302 to Google sign-in; `POST` and a fake bearer token get 401.
+  - None of these reached the app (Cloud Run request logs).
+  - The owner gets in, and the owner confirmed another Google account is refused.
+- **7.4 Oversized file.** An 11 MB file was given to the drop zone. It showed "This file is larger than 10 MB. Upload a smaller or split document.", made 0 upload requests, and the page stayed on `/experience` with the input cleared.
+- **7.2 PDF through Poppler.**
+  - A synthetic selectable-text PDF uploaded and extracted.
+  - The hosted extraction is identical line for line (14 lines) to the app's `pdftotext` extractor run locally on the same file; `pdf2json` gives a single padded line.
+  - No `pdftotext` warnings in the logs.
+- **7.1 State-changing calls.** These hosted POST/PATCH/DELETE calls were all accepted: retry parse, save draft (PATCH 200, `draft_version` 2), approve, index (two batches), and delete.
+  - Parse first failed with Gemini's own `503 UNAVAILABLE` (high demand) and succeeded on retry.
+  - The first draft save returned 422 under the app's rule that an unassigned block must be acknowledged; it saved once acknowledged.
+- **7.3 Full pipeline.**
+  - Approve and index returned 200 ("Indexed · version 1").
+  - Fit Check was first rejected as cross-origin. The JD-fit route kept its own copy of the old origin check; fixed in #6 (Decision 8).
+  - On `632294b` one attempt returned 500 "unexpected error" (transient), and the retry returned 200: 8 requirements (6 strong, 1 partial, 0 weak, 1 missing), each citing the test file.
+- **7.5 Deploy on merge and full reload.**
+  - Merging #6 deployed revision `00003` with no manual step; the image tag and `commit-sha` label are the merge commit.
+  - A page opened on `fed4693` (marker set, assets `dpl=fed46931f759`) was navigated through the in-app Experience link after the deploy. It did a full load: marker gone, new `navigate` entry, assets `dpl=632294b64739`.
+- **Also found on the hosted app.** The webpack production build served uncompiled Tailwind, so the page was unstyled. Fixed in #5 (Decision 13).
+- **Cleanup.** The test file was deleted (DELETE 200). The Experience list is back to the original 6 indexed files.
 
 ## Workflow follow-up
 

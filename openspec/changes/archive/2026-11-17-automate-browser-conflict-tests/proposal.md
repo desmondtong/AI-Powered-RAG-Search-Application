@@ -29,6 +29,6 @@ None. The behaviours the script asserts (one refresh on a 409, no automatic retr
 - `package.json` and `package-lock.json`: `devDependencies.playwright` and `scripts.test:browser` only.
 - New `scripts/test-browser.mjs` (runner) and `.github/workflows/ci.yml`.
 - `openspec/config.yaml` (apply and archive guidance), `README.md` (branches section), `app/lib/experience/README.md` (one paragraph), `docs/handoff/browser-test-automation.md` (deleted).
-- GitHub repository settings: `main` gets a ruleset requiring the `checks` and `browser` status checks and a pull request before merge. This is a manual step in the GitHub UI; the `gh` CLI is not installed on this machine.
+- GitHub repository settings: `main` gets a ruleset requiring the `checks` and `browser` status checks and a pull request before merge, and the repository allows only rebase merges and deletes merged branches. Applied with the `gh` CLI.
 - Origin: three merged branches deleted.
 - No change under `app/api`, `supabase`, `app/lib/experience/apiService.ts` or `app/lib/jdFit`; no change to the browser script itself.

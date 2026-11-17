@@ -54,7 +54,7 @@ Alternative considered: `concurrently` or `start-server-and-test`. Rejected beca
 
 Two jobs rather than one so a lint or type failure reports in about a minute without waiting behind the Chromium download, and so the PR shows which layer failed. Both are required from day one because the script is green now and a report-only period is how it drifted before.
 
-Branch protection is a GitHub ruleset on `main`: require a pull request, require the `checks` and `browser` status checks, and allow rebase merges. This is configured in the GitHub UI by the user; there is no CLI on this machine and it is a one-time step.
+Branch protection is a GitHub ruleset on `main` ("main protection"): require a pull request with rebase as the only merge method and no required approvals (a sole maintainer cannot approve their own PR), require the `checks` and `browser` status checks, and block deletion and force pushes. Repository settings allow only rebase merging and delete head branches on merge. Both were applied once through the `gh` CLI after the first green run; the repository is public, so rulesets are enforced on the free plan.
 
 Alternative considered: a `workflow_dispatch` trigger so the browser job can be run by hand. Not added; `npm run test:browser` is the by-hand path.
 
@@ -77,7 +77,7 @@ Alternative considered: a `workflow_dispatch` trigger so the browser job can be 
 1. The change itself follows the new rule: branch `automate-browser-conflict-tests` from `main` before the proposal is committed.
 2. Land the dependency, runner and docs; run `npm run test:browser` locally from a clean install.
 3. Land the workflow and open the PR; it is the first CI run. Fix until both jobs are green.
-4. Configure the `main` ruleset in GitHub with both checks required. Do this after the first green run so the check names are known to GitHub.
+4. Create the `main` ruleset with both checks required, after the first green run so the check names are known to GitHub.
 5. Delete the three stale branches locally and on origin.
 6. Archive on the branch, rebase-merge the PR, delete the branch.
 

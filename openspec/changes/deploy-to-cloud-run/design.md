@@ -100,10 +100,10 @@ Add a `deploy` job to `ci.yml` with `needs: [checks, browser]` and `if: github.e
 - *Why:* This needs zero application code and costs nothing extra. It stops anonymous traffic before Next runs, which is the property the spec requires, given the service-role key behind every route.
 - *Risk handled below:* IAP blocks unauthenticated health and smoke checks too, so post-deploy checks use Cloud Run's revision status, not an HTTP probe.
 
-### 8. Hosting-safe origin check: verify first, then fix only if needed
+### 8. Hosting-safe origin check
 
-- First verify on the deployed service: save a draft from the hosted page and check that it does not return 403 `cross-origin-rejected`. Next's server may already rebuild `req.url` from `x-forwarded-proto` and `host`, which Cloud Run's front end sets and overwrites.
-- If it fails, change `assertSameOriginMutation` and `assertTrustedReadBoundary` to compare `Origin` with an expected origin built from `x-forwarded-proto` (first value) and `x-forwarded-host` or `host`, falling back to `req.url`. Add tests in `app/lib/experience` covering:
+- **Confirmed during apply.** The standalone server was run locally with Cloud Run's headers (`Host: <service>.run.app`, `X-Forwarded-Proto: https`). `req.url` became `https://0.0.0.0:8090/…`: Next applies the forwarded scheme but keeps its listen address as the host. Every hosted mutation was rejected with 403.
+- The fix: `assertSameOriginMutation` and `assertTrustedReadBoundary` compare `Origin` with `publicRequestOrigin(req)`. That origin is built from `x-forwarded-proto` (first value; only `http` or `https` accepted) and `x-forwarded-host` or `host`, falling back to `req.url`. Tests in `app/lib/experience/apiRoutes.test.ts` cover:
   - an https `Origin` against an http `req.url` with `x-forwarded-proto: https` (accepted);
   - a different host (rejected);
   - no forwarded headers (unchanged behavior).

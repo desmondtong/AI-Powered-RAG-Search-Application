@@ -4,17 +4,21 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Manual deploys (the first one, or a redeploy) run from main only; see the deploy job's condition.
+  workflow_dispatch:
 
-# The build and the browser test never reach Supabase or Gemini: the browser
-# script intercepts every request. These are placeholders, not credentials.
-env:
-  NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
-  SUPABASE_SERVICE_ROLE_KEY: ci-dummy
-  GEMINI_API_KEY: ci-dummy
+permissions:
+  contents: read
 
 jobs:
   checks:
     runs-on: ubuntu-latest
+    # The build and the browser test never reach Supabase or Gemini: the browser
+    # script intercepts every request. These are placeholders, not credentials.
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      SUPABASE_SERVICE_ROLE_KEY: ci-dummy
+      GEMINI_API_KEY: ci-dummy
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,6 +39,10 @@ jobs:
 
   browser:
     runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      SUPABASE_SERVICE_ROLE_KEY: ci-dummy
+      GEMINI_API_KEY: ci-dummy
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -44,3 +52,96 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
+
+  # Builds the production image exactly as the deploy does and checks it, without any credentials.
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the production image
+        run: docker build --build-arg NEXT_DEPLOYMENT_ID="${GITHUB_SHA}" -t web:ci .
+      - name: Poppler is installed
+        # `pdftotext -v` prints its version to stderr; its exit code differs across Poppler releases, so only
+        # require the binary to be on PATH and to report a version.
+        run: docker run --rm --entrypoint sh web:ci -c 'command -v pdftotext && pdftotext -v 2>&1 | grep -i "pdftotext version"'
+      - name: No secret or build-time Supabase URL is baked into the image
+        run: |
+          env_json="$(docker image inspect web:ci --format '{{json .Config.Env}}')"
+          echo "$env_json"
+          for name in SUPABASE_SERVICE_ROLE_KEY GEMINI_API_KEY NEXT_PUBLIC_SUPABASE_URL; do
+            if grep -q "\"${name}=" <<<"$env_json"; then echo "::error::${name} is set in the image"; exit 1; fi
+          done
+          # A real project URL is <20-letter ref>.supabase.co; placeholders are the CI loopback URL and ci-dummy.
+          if docker run --rm --entrypoint sh web:ci -c \
+            "grep -rlE '[a-z]{20}\.supabase\.co|127\.0\.0\.1:54321|ci-dummy' /app --include='*.js' --exclude-dir=node_modules"; then
+            echo "::error::A Supabase URL or placeholder was inlined at build time"; exit 1
+          fi
+      - name: The server starts and answers
+        run: |
+          docker run -d --name web -p 8080:8080 \
+            -e NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 -e SUPABASE_SERVICE_ROLE_KEY=ci-dummy -e GEMINI_API_KEY=ci-dummy \
+            web:ci
+          for _ in $(seq 1 30); do
+            code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/ || true)"
+            if [ "$code" = "200" ]; then echo "Fit Check page answered 200"; docker rm -f web >/dev/null; exit 0; fi
+            sleep 1
+          done
+          docker logs web; docker rm -f web >/dev/null; exit 1
+
+  # Deploys main to Cloud Run after every other job passes. Only this job can request a GitHub OIDC token, and
+  # Google Cloud accepts that token only for this repository's main branch (Workload Identity Federation
+  # attribute condition), so pull requests, other branches and forks cannot deploy.
+  deploy:
+    needs: [checks, browser, image]
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      vars.GCP_PROJECT_ID != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION }}
+      SERVICE: jd-fit-check
+      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/app/web:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Build and push the image
+        run: |
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          docker build --build-arg NEXT_DEPLOYMENT_ID="${GITHUB_SHA}" -t "${IMAGE}" .
+          docker push "${IMAGE}"
+      - name: Deploy to Cloud Run
+        env:
+          SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+        run: |
+          # Access stays private: no --allow-unauthenticated, and IAP (configured once, outside this workflow)
+          # admits only the allow-listed account.
+          gcloud run deploy "${SERVICE}" \
+            --project "${PROJECT_ID}" \
+            --region "${REGION}" \
+            --image "${IMAGE}" \
+            --service-account "jd-fit-runtime@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --timeout 600 \
+            --memory 1Gi \
+            --cpu 1 \
+            --min-instances 0 \
+            --max-instances 2 \
+            --set-secrets "SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest,GEMINI_API_KEY=gemini-api-key:latest" \
+            --set-env-vars "NEXT_PUBLIC_SUPABASE_URL=${SUPABASE_URL}" \
+            --labels "commit-sha=${GITHUB_SHA}" \
+            --quiet
+      - name: Report the serving revision
+        run: |
+          gcloud run services describe "${SERVICE}" --project "${PROJECT_ID}" --region "${REGION}" \
+            --format 'value(status.latestReadyRevisionName,status.url,spec.template.spec.containers[0].image)'

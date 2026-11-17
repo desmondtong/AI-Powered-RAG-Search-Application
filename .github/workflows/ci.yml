@@ -24,6 +24,11 @@ jobs:
       - run: npm ci
       - run: npm run test:experience
       - run: npm run test:jd-fit
+      - run: npm run test:rag-eval
+      - name: Offline retrieval-quality eval
+        run: npm run eval:rag
+      - name: Validate OpenSpec specs and changes
+        run: npx -y @fission-ai/openspec@2.0.0 validate --all --no-interactive
       - run: npm run lint
       - run: npx tsc --noEmit
       - run: npm run build

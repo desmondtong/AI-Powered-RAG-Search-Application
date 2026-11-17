@@ -1,7 +1,8 @@
 import { isLikelyGarbledPdfText, normalizeExtractedText } from "../documentExtraction";
+import { EXPERIENCE_MAX_UPLOAD_BYTES } from "./uploadLimits";
 
 export const EXPERIENCE_EXTRACTION_LIMITS = {
-  maxUploadBytes: 10 * 1024 * 1024,
+  maxUploadBytes: EXPERIENCE_MAX_UPLOAD_BYTES,
   maxDocxExpandedBytes: 50 * 1024 * 1024,
   maxExtractedTextUtf16Units: 60000,
 } as const;

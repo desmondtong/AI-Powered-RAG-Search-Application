@@ -33,6 +33,21 @@ describe("experience list page contracts", () => {
     assert.match(dropZone, /role="alert"/, "upload errors are shown in place");
   });
 
+  it("rejects an oversized file before building the upload request", () => {
+    const dropZone = read("app/experience/_components/DropZone.tsx");
+    const check = dropZone.indexOf("oversizedUploadMessage(file)");
+    const formData = dropZone.indexOf("new FormData()");
+    const request = dropZone.indexOf("fetch(config.endpoint");
+    assert.ok(check > -1, "the drop zone checks the size");
+    assert.ok(check < formData && check < request, "the size check runs before any FormData or fetch");
+    const guardEnd = dropZone.indexOf("setError(null)", check);
+    assert.ok(guardEnd > check, "the normal path clears the error after the size guard");
+    const guard = dropZone.slice(check, guardEnd);
+    assert.match(guard, /setError\(tooLarge\)/, "the message goes to the existing in-place error slot");
+    assert.match(guard, /return;/, "the oversized path returns without uploading");
+    assert.doesNotMatch(guard, /setUploading\(/, "the zone never enters the uploading state, so it stays usable");
+  });
+
   it("has no modal, auto-closing timer or comma-joined action text", () => {
     for (const { path, text } of listSurface()) {
       for (const retired of ["UploadModal", "actions.join", "setTimeout", "window.confirm", "confirm("]) {

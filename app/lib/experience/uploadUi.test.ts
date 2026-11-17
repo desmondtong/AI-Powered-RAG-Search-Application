@@ -5,9 +5,11 @@ import {
   getDocumentsUploadConfig,
   getDocumentsUploadErrorMessage,
   isDocumentsUploadSuccess,
+  oversizedUploadMessage,
   shouldAutostart,
   uploadedSourceId,
 } from "./uploadUi";
+import { EXPERIENCE_EXTRACTION_LIMITS } from "./extractionValidation";
 
 describe("experience upload UI contracts", () => {
   it("scopes the inline upload to the experience API, DOCX and PDF, with the new labels", () => {
@@ -19,6 +21,19 @@ describe("experience upload UI contracts", () => {
     assert.equal(experience.body, "Drop a DOCX or selectable-text PDF here, or browse. Max 10 MB.");
     assert.equal("hint" in experience, false);
     assert.deepEqual(getDocumentsUploadConfig(), experience);
+  });
+
+  it("checks size in the browser against the same limit the server enforces", () => {
+    const experience = getDocumentsUploadConfig("experience");
+    const limit = EXPERIENCE_EXTRACTION_LIMITS.maxUploadBytes;
+
+    assert.equal(experience.maxBytes, limit, "client and server limits must not drift");
+    assert.equal(limit, 10 * 1024 * 1024);
+    assert.match(experience.tooLargeMessage, /10 MB/, "the message names the limit");
+    assert.match(experience.tooLargeMessage, /smaller or split/);
+    assert.equal(oversizedUploadMessage({ size: limit }), null, "exactly at the limit is accepted, as on the server");
+    assert.equal(oversizedUploadMessage({ size: limit + 1 }), experience.tooLargeMessage);
+    assert.equal(oversizedUploadMessage({ size: 0 }), null, "empty files are left to the server's empty-file error");
   });
 
   it("interprets experience upload responses", () => {

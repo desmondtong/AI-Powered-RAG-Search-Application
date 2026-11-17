@@ -50,6 +50,7 @@ export const DROP_ZONE = {
   browse: "Browse files",
   uploading: "Uploading…",
   accept: ".pdf,.docx",
+  tooLarge: "This file is larger than 10 MB. Upload a smaller or split document.",
 } as const;
 
 export const ACTION_LABELS = {

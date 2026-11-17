@@ -229,7 +229,9 @@ CI runs on every pull request and on pushes to `main` ([ci.yml](.github/workflow
 
 | Job | Runs |
 | --- | --- |
-| `checks` | `npm run test:experience`, `npm run test:jd-fit`, `npm run lint`, `npx tsc --noEmit`, `npm run build` |
+| `checks` | `npm run test:experience`, `npm run test:jd-fit`, `npm run test:rag-eval`, `npm run eval:rag` (offline retrieval-quality eval), `openspec validate --all`, `npm run lint`, `npx tsc --noEmit`, `npm run build` |
 | `browser` | `npx playwright install --with-deps chromium`, then `npm run test:browser` |
 
-`npm run test:browser` builds the app, serves it on port 3033, drives the four indexing-conflict scenarios in headless Chromium with every API call intercepted, and stops the server. It never reaches Supabase or Gemini, so CI uses placeholder values for the environment variables the build reads. Locally, install the browser once with `npx playwright install chromium`; if a server is left behind after an interrupted run, `lsof -i :3033` finds it.
+`npm run test:browser` builds the app, serves it on port 3033, drives the four indexing-conflict scenarios in headless Chromium with every API call intercepted, and stops the server. It never reaches Supabase or Gemini, so CI uses placeholder values for the environment variables the build reads. The live RAG eval, corpus seeding and the SQL checks in `supabase/checks` need the real project and stay manual.
+
+A new test file inside an existing suite's folder runs in CI automatically. A new suite or job needs a step in `ci.yml`, and a new job also needs adding to the required checks on `main`. Locally, install the browser once with `npx playwright install chromium`; if a server is left behind after an interrupted run, `lsof -i :3033` finds it.

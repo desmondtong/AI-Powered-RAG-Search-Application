@@ -88,7 +88,7 @@ Add a `deploy` job to `ci.yml` with `needs: [checks, browser]` and `if: github.e
 
 ### 7. IAP directly on Cloud Run
 
-- Enable IAP on the service with `gcloud beta run services update jd-fit-check --iap` (or the console toggle). No load balancer is used.
+- Enable IAP on the service directly; no load balancer is used. `gcloud run services update jd-fit-check --iap` is GA. For a project with no organization, Google recommends the first enablement in the console, using **Auto generate credentials** for the custom OAuth client. Later access changes go through `gcloud iap web add-iam-policy-binding`.
 - The project has no organization, so IAP needs a **custom OAuth client**:
   - Configure an External consent screen (app name "JD Fit Check", user type External, publishing status Testing, test user `kingdesmond1995@gmail.com`).
   - Create a Web OAuth client.
@@ -132,7 +132,7 @@ Add a `deploy` job to `ci.yml` with `needs: [checks, browser]` and `if: github.e
 ### 12. Artifact Registry cleanup
 
 - Docker repository `app` in `australia-southeast1`.
-- Cleanup policy: keep the 5 most recent versions of `web`, and delete untagged images older than 7 days.
+- Cleanup policy: keep the 5 most recent versions of `web`, delete untagged images older than 7 days, and delete any image older than 30 days. Keep rules win over delete rules, so the 5 newest always survive.
 - Keeps storage inside the 0.5 GB free tier.
 
 ## Risks / Trade-offs

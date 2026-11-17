@@ -14,6 +14,32 @@ export class ExperienceApiError extends Error {
   }
 }
 
+function firstHeaderValue(req: Request, name: string): string | null {
+  const value = req.headers.get(name)?.split(",")[0]?.trim();
+  return value ? value : null;
+}
+
+/**
+ * The origin the browser actually used. Behind a TLS-terminating front end such as Cloud Run, the server sees
+ * plain HTTP and its own listen address in `req.url`, so the public scheme comes from `X-Forwarded-Proto` (set and
+ * overwritten by the front end) and the public host from `X-Forwarded-Host` or `Host`, which a browser cannot
+ * forge for a cross-site request. Without those headers, `req.url` decides, as before.
+ */
+export function publicRequestOrigin(req: Request): string {
+  const url = new URL(req.url);
+  const host = firstHeaderValue(req, "x-forwarded-host") ?? firstHeaderValue(req, "host");
+  if (!host) {
+    return url.origin;
+  }
+  const forwardedProto = firstHeaderValue(req, "x-forwarded-proto")?.toLowerCase();
+  const protocol = forwardedProto === "https" || forwardedProto === "http" ? forwardedProto : url.protocol.slice(0, -1);
+  try {
+    return new URL(`${protocol}://${host}`).origin;
+  } catch {
+    return url.origin;
+  }
+}
+
 export function assertSameOriginMutation(req: Request): void {
   const method = req.method.toUpperCase();
   if (method === "GET" || method === "HEAD" || method === "OPTIONS") {
@@ -25,16 +51,14 @@ export function assertSameOriginMutation(req: Request): void {
     return;
   }
 
-  const requestOrigin = new URL(req.url).origin;
-  if (origin !== requestOrigin) {
+  if (origin !== publicRequestOrigin(req)) {
     throw new ExperienceApiError("cross-origin-rejected", "Cross-origin experience mutations are not allowed.", 403);
   }
 }
 
 export function assertTrustedReadBoundary(req: Request): void {
   const origin = req.headers.get("origin");
-  const requestOrigin = new URL(req.url).origin;
-  if (origin && origin !== requestOrigin) {
+  if (origin && origin !== publicRequestOrigin(req)) {
     throw new ExperienceApiError("cross-origin-rejected", "Cross-origin experience reads are not allowed.", 403);
   }
 

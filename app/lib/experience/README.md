@@ -146,7 +146,7 @@ Publication requires `p_execution_token` as its final RPC argument. Missing, exp
 
 ## Experience API Contract
 
-`POST`, `PATCH`, and other mutation routes reject cross-origin browser requests before service-role work. Private source-file reads also enforce the trusted read boundary and return `Cache-Control: private, no-store`; they do not create permanent public storage URLs.
+`POST`, `PATCH`, and other mutation routes reject cross-origin browser requests before service-role work. The `Origin` header is compared with the public origin the browser used: the scheme from `X-Forwarded-Proto` and the host from `X-Forwarded-Host` or `Host`, falling back to the request URL. Behind Cloud Run, TLS ends at the front end and the server sees its own listen address, so the request URL alone would reject every hosted request. Private source-file reads also enforce the trusted read boundary and return `Cache-Control: private, no-store`; they do not create permanent public storage URLs.
 
 | Route | Payload | Success | Notes |
 | --- | --- | --- | --- |

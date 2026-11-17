@@ -46,7 +46,7 @@ Work happens on branch `deploy-to-cloud-run` (worktree `.claude/worktrees/deploy
 
 ## 7. Hosted verification
 
-- [ ] 7.1 On the hosted app, save a draft or run another state-changing call. If it returns 403 `cross-origin-rejected`, implement design Decision 8 in `app/lib/experience/apiRoutes.ts` with unit tests (forwarded https accepted, foreign host rejected, no forwarded headers unchanged), merge, and re-verify after the automatic deploy.
+- [ ] 7.1 On the hosted app, save a draft or run another state-changing call. Verify it is accepted, not rejected with 403 `cross-origin-rejected`. Decision 8 was reproduced locally against the standalone server with Cloud Run headers and is already implemented in `app/lib/experience/apiRoutes.ts`, with tests in `apiRoutes.test.ts`.
 - [ ] 7.2 Upload a selectable-text PDF on the hosted app and run it to review. Verify in the extraction snapshot or logs that the Poppler path was used, not `pdf2json`.
 - [ ] 7.3 Run one file through approve and index, and run one Fit Check evaluation on the hosted app. Verify that both complete and that no request ends with a platform timeout in Cloud Run logs.
 - [ ] 7.4 Drop a file over 10 MB on the hosted drop zone. Verify that the size message appears and no upload request is logged.

@@ -46,7 +46,7 @@ Alternative considered: `concurrently` or `start-server-and-test`. Rejected beca
 
 ### 3. Playwright is pinned, Chromium only, installed by Playwright
 
-`"playwright": "1.58.1"` with an exact version, because the browser build Playwright downloads is tied to the package version and a caret range would silently change the browser under test. CI runs `npx playwright install --with-deps chromium` so only one browser is downloaded. Locally, `npx playwright install chromium` is a one-time step documented in the README. The `channel: "chrome"` fallback from the handoff is not added: the local stall was a network problem, and the script must test the same Chromium everywhere.
+`"playwright": "1.65.1"` with an exact version, because the browser build Playwright downloads is tied to the package version and a caret range would silently change the browser under test. The handoff's 1.58.1 was tried first and could not install on this machine: Playwright 1.58 through 1.59 hang at "extracting archive" under Node 26 (the download itself takes seconds), a known bug fixed from 1.60. The earlier "download stalled" note in the handoff was this bug, not the network. 1.65.1 was the latest release on 2026-11-17 and installs Chromium, the headless shell and FFmpeg in under a minute. CI runs `npx playwright install --with-deps chromium` so only one browser is downloaded. Locally, `npx playwright install chromium` is a one-time step documented in the README. The `channel: "chrome"` fallback from the handoff is not added: the local stall was a network problem, and the script must test the same Chromium everywhere.
 
 ### 4. One workflow, two jobs, both required
 
@@ -65,7 +65,7 @@ Alternative considered: a `workflow_dispatch` trigger so the browser job can be 
 ## Risks / Trade-offs
 
 - [Turbopack build fails in CI for a reason the webpack build hides] → The first PR of this change is the test. If it fails, fix the cause in this change rather than fall back to `--webpack`; the script needs no CSS, so a Turbopack-only CSS problem would not block it.
-- [Next's startup advisory check (`SecurityFatalError` about a known vulnerability) fails the build in CI] → It failed once locally while an install was running in parallel and passed on rerun. If it recurs in CI on a clean install, upgrading Next is a separate change; CI stays red until that lands, which is the correct signal.
+- [Next's advisory check (`SecurityFatalError`) stops the build] → Observed during apply: Next 16.4.2 is in the range of GHSA-mfr8-8qww-v76h (fixed in 16.4.6). The stop is Next's agent-only upgrade nudge: when an AI agent runs `next build`, it halts every other run and writes a one-time retry receipt under `.next/cache/`; for a person in a terminal and in CI it is a warning and the build continues, so CI is not affected. Under an agent, `npm run build` and `npm run test:browser` therefore alternate between fail and pass until Next is upgraded. Upgrading Next stays a separate change, recommended as the next one.
 - [Chromium download is slow or flaky on GitHub runners] → It is the standard Playwright path and usually takes under a minute. Add `actions/cache` for `~/.cache/ms-playwright` only if it proves flaky.
 - [Port 3033 is in use on the developer's machine] → `EXPERIENCE_PREVIEW_PORT` overrides it; the runner fails fast with the bind error otherwise.
 - [The server survives a crashed runner] → The `finally` block also runs on `SIGINT`; a leftover process is visible with `lsof -i :3033` and the README says so.

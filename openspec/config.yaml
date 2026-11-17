@@ -38,3 +38,8 @@ operations:
       - Code-level tests, static contract tests, lint, typecheck, and build are required but do not replace browser walkthrough verification.
       - The final implementation summary must include the dev server command, URL, browser walkthrough steps performed, observed result, and any screenshots or limitations.
       - If browser automation is unavailable, mark the browser walkthrough as blocked and explain why; do not silently substitute unit tests.
+      - Work on a git branch named exactly after the change id, cut from main. Never commit to main directly; main is updated only through a pull request.
+      - A change that touches app/experience, app/components or app/lib/experience/workspace is not complete until `npm run test:browser` is green.
+  archive:
+    guidance:
+      - The archive commit is the last commit on the change branch. After it, open or update the pull request, rebase-merge once both CI checks are green, delete the branch locally and on origin, and remove any git worktree for the change.

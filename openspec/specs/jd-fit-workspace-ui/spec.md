@@ -120,6 +120,10 @@ The Experience page SHALL accept DOCX and PDF files through an inline drop zone 
 - **WHEN** the upload returns an error such as an unsupported format or exceeding the size limit
 - **THEN** the drop zone shows that error message and remains available for another attempt
 
+#### Scenario: File exceeds the upload limit before sending
+- **WHEN** the user drops or selects a file larger than the server's upload limit
+- **THEN** the drop zone shows a message naming the limit and asking for a smaller or split document, sends no upload request, and remains available for another attempt
+
 ### Requirement: Client-chained extract and parse
 Immediately after a successful upload, the file page SHALL request extraction and, only if extraction succeeds, request parsing, using the existing separate API calls. Each stage SHALL report its own progress and failure. Revisiting a file left in `uploaded` SHALL offer an explicit "Start processing" action, and a file left in `extracted` an explicit "Continue processing" action, rather than starting work automatically.
 

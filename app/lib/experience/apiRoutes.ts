@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { publicRequestOrigin } from "../publicOrigin";
+
+export { publicRequestOrigin };
 
 export class ExperienceApiError extends Error {
   readonly code: string;
@@ -11,32 +14,6 @@ export class ExperienceApiError extends Error {
     this.code = code;
     this.status = status;
     this.details = details;
-  }
-}
-
-function firstHeaderValue(req: Request, name: string): string | null {
-  const value = req.headers.get(name)?.split(",")[0]?.trim();
-  return value ? value : null;
-}
-
-/**
- * The origin the browser actually used. Behind a TLS-terminating front end such as Cloud Run, the server sees
- * plain HTTP and its own listen address in `req.url`, so the public scheme comes from `X-Forwarded-Proto` (set and
- * overwritten by the front end) and the public host from `X-Forwarded-Host` or `Host`, which a browser cannot
- * forge for a cross-site request. Without those headers, `req.url` decides, as before.
- */
-export function publicRequestOrigin(req: Request): string {
-  const url = new URL(req.url);
-  const host = firstHeaderValue(req, "x-forwarded-host") ?? firstHeaderValue(req, "host");
-  if (!host) {
-    return url.origin;
-  }
-  const forwardedProto = firstHeaderValue(req, "x-forwarded-proto")?.toLowerCase();
-  const protocol = forwardedProto === "https" || forwardedProto === "http" ? forwardedProto : url.protocol.slice(0, -1);
-  try {
-    return new URL(`${protocol}://${host}`).origin;
-  } catch {
-    return url.origin;
   }
 }
 

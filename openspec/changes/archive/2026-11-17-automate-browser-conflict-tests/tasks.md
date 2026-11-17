@@ -15,7 +15,7 @@
 ## 3. CI workflow
 
 - [x] 3.1 Create `.github/workflows/ci.yml` per design Decision 4: triggers `pull_request` and `push` to `main`; jobs `checks` and `browser` on `ubuntu-latest`, each with `actions/checkout`, `actions/setup-node` (`node-version-file: .nvmrc`, `cache: npm`), `npm ci`, and job-level dummy values for `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and `GEMINI_API_KEY`; `checks` runs `npm run test:experience`, `npm run test:jd-fit`, `npm run lint`, `npx tsc --noEmit`, `npm run build`; `browser` runs `npx playwright install --with-deps chromium` then `npm run test:browser`. Verify the file parses (`node -e "require('js-yaml')"` is not available, so use `python3 -c "import yaml,sys; yaml.safe_load(open('.github/workflows/ci.yml'))"` or a careful read) and contains no secret reference (`grep -n secrets .github/workflows/ci.yml` is empty).
-- [ ] 3.2 Commit, push the branch, and open the pull request on GitHub titled "Automate browser conflict tests". Verify both jobs run and are green; the `browser` job log shows four `PASS` lines and `externalRequests: 0`. If `SecurityFatalError` or a Turbopack build error appears, resolve it per design Risks before continuing.
+- [x] 3.2 Commit, push the branch, and open the pull request on GitHub titled "Automate browser conflict tests". Verify both jobs run and are green; the `browser` job log shows four `PASS` lines and `externalRequests: 0`. If `SecurityFatalError` or a Turbopack build error appears, resolve it per design Risks before continuing.
 
 ## 4. Branch rules and guidance
 
@@ -25,13 +25,13 @@
 
 ## 5. Repository settings and cleanup
 
-- [ ] 5.1 After the first green run from 3.2, create a ruleset on `main` in GitHub (Settings → Rules → Rulesets): require a pull request before merging, require the `checks` and `browser` status checks to pass, and block force pushes. In Settings → General, enable "Automatically delete head branches" and allow rebase merging. Verify by viewing the open PR: the merge button shows both checks as required.
+- [x] 5.1 After the first green run from 3.2, create a ruleset on `main` in GitHub (Settings → Rules → Rulesets): require a pull request before merging, require the `checks` and `browser` status checks to pass, and block force pushes. In Settings → General, enable "Automatically delete head branches" and allow rebase merging. Verify by viewing the open PR: the merge button shows both checks as required.
 - [x] 5.2 Delete the merged branches `redesign-jd-fit-workspace`, `retire-generic-rag-search` and `tighten-workspace-copy-and-feedback` locally (`git branch -d`) and on origin (`git push origin --delete`). Verify `git branch -a` lists only `main`, `automate-browser-conflict-tests` and their remotes.
 
 ## 6. Integration check
 
 - [x] 6.1 From a clean checkout of the branch (`rm -rf node_modules .next && npm ci && npx playwright install chromium`), run `npm run test:browser` and confirm it is green. Confirm `git diff --stat main -- app/api supabase app/lib/experience/apiService.ts app/lib/jdFit app/lib/experience/retryConflicts.browser.mjs` is empty and `git diff main -- package.json` touches only `devDependencies` and `scripts`.
-- [ ] 6.2 Confirm the final PR has both required checks green and the manual browser walkthrough guidance did not apply (no file under `app/experience`, `app/components` or `app/lib/experience/workspace` changed).
+- [x] 6.2 Confirm the final PR has both required checks green and the manual browser walkthrough guidance did not apply (no file under `app/experience`, `app/components` or `app/lib/experience/workspace` changed).
 
 ## Workflow follow-up
 

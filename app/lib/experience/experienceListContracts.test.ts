@@ -61,6 +61,17 @@ describe("experience list page contracts", () => {
     assert.doesNotMatch(page, /subtitle|HOW_IT_WORKS/, "no subtitle and no inline stage explanation on the page");
   });
 
+  it("opens the file page from anywhere on the row except its controls, and shows no button for quiet states", () => {
+    const row = read("app/experience/_components/ExperienceRow.tsx");
+    assert.match(row, /router\.push\(href\)/);
+    assert.match(row, /closest\("a, button, \[role='menu'\]"\)/);
+    assert.ok(row.indexOf("closest(") < row.indexOf("router.push(href)"), "the control check runs before navigation");
+    assert.match(row, /getSelection\(\)/, "a text selection does not navigate");
+    assert.doesNotMatch(row, /href="\/"/, "no row button links to Fit Check");
+    assert.doesNotMatch(row, /Working…/, "running rows carry only their stepper and label");
+    assert.doesNotMatch(row, /try-jd|Try a job description/);
+  });
+
   it("renders a row helper only when the stage view provides one", () => {
     const row = read("app/experience/_components/ExperienceRow.tsx");
     assert.match(row, /view\.helper &&/);

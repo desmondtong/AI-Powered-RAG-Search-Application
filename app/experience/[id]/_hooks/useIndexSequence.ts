@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Notice } from "@/app/components/NoticeProvider";
-import { ACTION_LABELS, NOTICES } from "@/app/lib/experience/workspace/copy";
+import { NOTICES } from "@/app/lib/experience/workspace/copy";
 import { readApiErrorCode, readApiErrorMessage, type IndexProgress, type SourceDetail } from "@/app/lib/experience/workspace/types";
 
 export type IndexStopReason = "indexed" | "no-progress" | "unmounted" | "error" | "conflict" | null;
@@ -125,7 +125,7 @@ export function useIndexSequence(sourceId: string, refresh: Refresh, notice: Not
             const { detail } = await refresh();
             if (stopReason === "indexed") {
               notice.success(NOTICES.searchable(detail?.source.active_version_number ?? null), {
-                action: { label: ACTION_LABELS["try-jd"], href: "/" },
+                action: { label: NOTICES.tryJd, href: "/" },
               });
             }
           }

@@ -111,6 +111,17 @@ describe("experience file page contracts", () => {
     assert.match(read(FILE_PAGE), /stale = indexing\.conflict\?\.code === "index-candidate-stale"/);
   });
 
+  it("shows the approved revision read-only from one export read and nothing else", () => {
+    const page = read(FILE_PAGE);
+    const hook = read("app/experience/[id]/_hooks/useApprovedView.ts");
+    assert.match(page, /useApprovedView\(/);
+    assert.match(page, /<ExperienceRail\s+mode="read"/);
+    assert.equal((hook.match(/fetch\(/g) ?? []).length, 1, "the view makes one read");
+    assert.match(hook, /fetch\(`\/api\/experiences\/\$\{sourceId\}\/revisions\/\$\{revisionId\}\/export`\)/);
+    assert.doesNotMatch(hook, /\bnotice\.(success|info)\(/, "export failures stay in place");
+    assert.equal((page.match(/runIndexSequence\(/g) ?? []).length, 2, "the read-only view adds no index caller");
+  });
+
   it("edits an approved file through draft-from-approved and says the searchable version is unchanged", () => {
     const page = read(FILE_PAGE);
     assert.match(page, /`\/api\/experiences\/\$\{sourceId\}\/draft-from-approved`/);
@@ -138,6 +149,48 @@ function failureBlocks(source: string) {
   }
   return bodies;
 }
+
+describe("leave guard contracts", () => {
+  const PROVIDER = "app/components/LeaveGuardProvider.tsx";
+
+  it("warns the browser only while the draft is dirty, from one listener", () => {
+    const page = read(FILE_PAGE);
+    const effects = page.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[[^\]]*\]\);/g) ?? [];
+    const warning = effects.filter((effect) => effect.includes('addEventListener("beforeunload"'));
+    assert.equal(warning.length, 1, "one beforeunload effect");
+    assert.match(warning[0], /^useEffect\(\(\) => \{\s*if \(!editor\.dirty\) return;/, "gated on the draft being dirty");
+    assert.match(warning[0], /\}, \[editor\.dirty\]\);$/);
+    assert.match(warning[0], /removeEventListener\("beforeunload"/);
+    const sources = filesUnder("app").filter((file) => !file.endsWith(".test.ts"));
+    assert.deepEqual(sources.filter((file) => read(file).includes('addEventListener("beforeunload"')), [FILE_PAGE]);
+  });
+
+  it("offers Save and leave, Leave without saving and Stay from the shared confirmation", () => {
+    const page = read(FILE_PAGE);
+    const copy = read("app/lib/experience/workspace/copy.ts");
+    for (const token of ["LEAVE_GUARD.leave", "LEAVE_GUARD.save", "LEAVE_GUARD.stay"]) assert.ok(page.includes(token), token);
+    assert.match(page, /leavePending \? \([\s\S]*?<ConfirmInline/);
+    const block = blockAfter(copy, "export const LEAVE_GUARD = ");
+    for (const label of ['"Save and leave"', '"Leave without saving"', '"Stay"']) assert.ok(block.includes(label), label);
+  });
+
+  it("mounts the guard once, in the root layout, outside the notice provider", () => {
+    const layout = read("app/layout.tsx");
+    assert.ok(layout.indexOf("<LeaveGuardProvider>") < layout.indexOf("<NoticeProvider>"));
+    const sources = filesUnder("app").filter((file) => file !== PROVIDER && !file.endsWith(".test.ts"));
+    assert.deepEqual(sources.filter((file) => /<LeaveGuardProvider\b/.test(read(file))), ["app/layout.tsx"]);
+  });
+
+  it("routes every in-app navigation through intercept, and leaving sends no request", () => {
+    for (const file of ["app/components/TopBar.tsx", "app/experience/[id]/_components/StageHeader.tsx", "app/components/NoticeProvider.tsx"]) {
+      assert.match(read(file), /\bintercept\(/, file);
+    }
+    assert.match(read("app/components/TopBar.tsx"), /onNavigate=\{guarded\(/);
+    const provider = read(PROVIDER);
+    assert.doesNotMatch(provider, /fetch\(/, "the provider never calls the API; Save and leave goes through the page's save");
+    assert.match(provider, /if \(choice === "leave"\) \{\s*go\(target\);\s*return;\s*\}/);
+  });
+});
 
 describe("transient notice contracts", () => {
   const PROVIDER = "app/components/NoticeProvider.tsx";

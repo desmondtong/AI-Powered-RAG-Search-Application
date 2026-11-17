@@ -67,10 +67,11 @@ function pageDetail(summary: SourceSummary): SourceDetail {
 }
 
 describe("stage view mapping", () => {
-  it("uploaded: only Upload is done and Continue processing is the primary", () => {
+  it("uploaded: only Upload is done and Start processing is the primary", () => {
     const view = toStageView(source("uploaded"));
     assert.deepEqual(states(view), ["done", "upcoming", "upcoming", "upcoming", "upcoming", "upcoming"]);
-    assert.equal(view.primary?.label, "Continue processing");
+    assert.equal(view.primary?.id, "start-processing");
+    assert.equal(view.primary?.label, "Start processing");
   });
 
   it("extracting: Extract is running, nothing to click, and the page helper says the user can leave", () => {
@@ -141,16 +142,49 @@ describe("stage view mapping", () => {
     assert.match(view.helper, /continue indexing to finish/);
   });
 
-  it("indexed: every step done, S6 reads Indexed and Try a job description is primary", () => {
-    const view = toStageView(
-      source("indexed", { active_revision_id: R1, latest_approved_revision_id: R1, active_version_number: 2, latest_approved_version_number: 2 }),
-    );
-    assert.deepEqual(states(view), ["done", "done", "done", "done", "done", "done"]);
-    assert.equal(view.steps[5].label, "Indexed");
-    assert.equal(view.primary?.label, "Try a job description");
-    assert.equal(view.label, "Indexed · version 2");
-    const edit = view.overflow.find((item) => item.id === "edit-approved");
-    assert.equal(edit?.label, "Edit · starts draft for version 3");
+  it("indexed: every step done, S6 reads Indexed and nothing is primary", () => {
+    const summary = source("indexed", { active_revision_id: R1, latest_approved_revision_id: R1, active_version_number: 2, latest_approved_version_number: 2 });
+    for (const view of [toStageView(summary), toStageView(summary, pageDetail(summary))]) {
+      assert.deepEqual(states(view), ["done", "done", "done", "done", "done", "done"]);
+      assert.equal(view.steps[5].label, "Indexed");
+      assert.equal(view.primary, null);
+      assert.equal(view.secondary, null);
+      assert.doesNotMatch(JSON.stringify(view), /Try a job description|try-jd/, "the notice is the only shortcut to Fit Check");
+      assert.equal(view.label, "Indexed · version 2");
+      const edit = view.overflow.find((item) => item.id === "edit-approved");
+      assert.equal(edit?.label, "Edit · starts draft for version 3");
+    }
+  });
+
+  it("offers a primary only while the file is waiting on the user", () => {
+    const WAITING: Record<string, string> = {
+      uploaded: "start-processing",
+      extracted: "continue-processing",
+      draft: "start-review",
+      approved: "index-now",
+      indexing: "continue-indexing",
+      failed: "retry-parse",
+      "cleanup-pending": "retry-delete",
+    };
+    const QUIET = ["extracting", "parsing", "indexed", "mystery"];
+    const overrides: Record<string, Partial<SourceSummary>> = {
+      draft: { latest_draft_revision_id: R2 },
+      approved: { latest_approved_revision_id: R1 },
+      indexing: { latest_approved_revision_id: R1 },
+      indexed: { active_revision_id: R1, latest_approved_revision_id: R1 },
+      failed: { failure: { stage: "parsing", message: "Model failed.", recoverable_action: "retry-parse" } },
+      "cleanup-pending": { cleanup_error: { message: "Storage busy.", recoverable_action: "retry-delete" } },
+    };
+    for (const [status, expected] of Object.entries(WAITING)) {
+      const summary = source(status, overrides[status]);
+      assert.equal(toStageView(summary).primary?.id, expected, `${status} row`);
+      assert.equal(toStageView(summary, pageDetail(summary)).primary?.id, expected, `${status} page`);
+    }
+    for (const status of QUIET) {
+      const summary = source(status, overrides[status]);
+      assert.equal(toStageView(summary).primary, null, `${status} row`);
+      assert.equal(toStageView(summary, pageDetail(summary)).primary, null, `${status} page`);
+    }
   });
 
   it("indexed file page: one fact with counts and time, and the version only in the label", () => {

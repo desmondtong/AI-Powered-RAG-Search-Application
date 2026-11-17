@@ -136,7 +136,7 @@ export function toStageView(source: SourceSummary, detail?: SourceDetail | null)
         label: copy.label,
         helper: helperOf(copy),
         tone: "attention",
-        primary: has(source, "extract") ? action("continue-processing") : null,
+        primary: has(source, "extract") ? action("start-processing") : null,
         secondary: null,
         overflow: commonOverflow(source, detail),
         stepIndex: 1,
@@ -241,7 +241,8 @@ export function toStageView(source: SourceSummary, detail?: SourceDetail | null)
         label: copy.label,
         helper: helperOf(copy),
         tone: "done",
-        primary: action("try-jd"),
+        // Nothing is waiting on the user: the searchable notice is the only shortcut to Fit Check.
+        primary: null,
         secondary: null,
         overflow: commonOverflow(source, detail),
         stepIndex: null,

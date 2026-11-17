@@ -10,19 +10,79 @@ import {
   type DraftFieldError,
   type EvidenceItem,
   type SourceBlock,
+  type SourceSpan,
 } from "@/app/lib/experience/workspace/types";
-import { Button } from "../../_components/ui";
+import { Button, Pill } from "../../_components/ui";
 import InlineField, { PillSelect } from "./InlineField";
+import StaticField from "./StaticField";
 
 export function evidenceAnchorId(experienceIndex: number, evidenceIndex: number) {
   return `evidence-${experienceIndex}-${evidenceIndex}`;
 }
 
+interface EvidenceCardShared {
+  experienceIndex: number;
+  evidenceIndex: number;
+  item: EvidenceItem;
+  blocksById: ReadonlyMap<string, SourceBlock>;
+  blockNumbers: ReadonlyMap<string, number>;
+}
+
+interface EditableEvidenceCardProps extends EvidenceCardShared {
+  mode: "edit";
+  errors: DraftFieldError[];
+  selecting: boolean;
+  onChange: (updater: (item: EvidenceItem) => void) => void;
+  onRemove: () => void;
+  onRemoveSpan: (spanIndex: number) => void;
+  onShowSpan: (spanIndex: number) => void;
+  onSelectFromSource: () => void;
+}
+
+interface ReadOnlyEvidenceCardProps extends EvidenceCardShared {
+  mode: "read";
+  onShowSpan: (spanIndex: number) => void;
+}
+
+export type EvidenceCardProps = EditableEvidenceCardProps | ReadOnlyEvidenceCardProps;
+
+function spanLabel(blockNumbers: ReadonlyMap<string, number>, span: SourceSpan) {
+  const number = blockNumbers.get(span.block_id);
+  return number ? `b${number}` : "missing block";
+}
+
+/** "Source: bN": scrolls the document to the span. Shared by both modes. */
+function SourceLink({
+  span,
+  label,
+  blocksById,
+  className,
+  onClick,
+}: {
+  span: SourceSpan;
+  label: string;
+  blocksById: ReadonlyMap<string, SourceBlock>;
+  className: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex min-w-0 items-center gap-1 rounded-full hover:underline ${className}`}
+      title={spanExcerpt(blocksById.get(span.block_id)?.text, span, 200)}
+    >
+      <LinkIcon size={12} className="shrink-0" />
+      <span className="truncate">{REVIEW.sourceLink(label)}</span>
+    </button>
+  );
+}
+
 /**
- * One evidence item: summary, kind, attribution and activity status, its span chips ("Source: bN" scrolls the
- * document, "×" removes one span), and an attention state with "Select from source" and "Remove" when it has none.
+ * One evidence item in review: summary, kind, attribution and activity status, its span chips ("Source: bN" scrolls
+ * the document, "×" removes one span), and an attention state with "Select from source" and "Remove" when it has none.
  */
-export default function EvidenceCard({
+function EditableEvidenceCard({
   experienceIndex,
   evidenceIndex,
   item,
@@ -35,20 +95,7 @@ export default function EvidenceCard({
   onRemoveSpan,
   onShowSpan,
   onSelectFromSource,
-}: {
-  experienceIndex: number;
-  evidenceIndex: number;
-  item: EvidenceItem;
-  blocksById: ReadonlyMap<string, SourceBlock>;
-  blockNumbers: ReadonlyMap<string, number>;
-  errors: DraftFieldError[];
-  selecting: boolean;
-  onChange: (updater: (item: EvidenceItem) => void) => void;
-  onRemove: () => void;
-  onRemoveSpan: (spanIndex: number) => void;
-  onShowSpan: (spanIndex: number) => void;
-  onSelectFromSource: () => void;
-}) {
+}: EditableEvidenceCardProps) {
   const missing = item.source_refs.length === 0;
   const tone = errors.length > 0 ? "border-red-border" : missing ? "border-amber-border bg-amber-wash" : "border-hairline bg-card";
   return (
@@ -97,22 +144,13 @@ export default function EvidenceCard({
       ) : (
         <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Source spans">
           {item.source_refs.map((span, spanIndex) => {
-            const number = blockNumbers.get(span.block_id);
-            const blockLabel = number ? `b${number}` : "missing block";
+            const blockLabel = spanLabel(blockNumbers, span);
             return (
               <li
                 key={`${span.block_id}:${span.start}:${span.end}:${spanIndex}`}
                 className="inline-flex max-w-full items-center rounded-full border border-evidence-border bg-evidence-wash text-label-md text-evidence-text"
               >
-                <button
-                  type="button"
-                  onClick={() => onShowSpan(spanIndex)}
-                  className="inline-flex min-w-0 items-center gap-1 rounded-full py-0.5 pl-2 pr-1 hover:underline"
-                  title={spanExcerpt(blocksById.get(span.block_id)?.text, span, 200)}
-                >
-                  <LinkIcon size={12} className="shrink-0" />
-                  <span className="truncate">{REVIEW.sourceLink(blockLabel)}</span>
-                </button>
+                <SourceLink span={span} label={blockLabel} blocksById={blocksById} className="py-0.5 pl-2 pr-1" onClick={() => onShowSpan(spanIndex)} />
                 <button
                   type="button"
                   onClick={() => onRemoveSpan(spanIndex)}
@@ -158,4 +196,56 @@ export default function EvidenceCard({
       )}
     </li>
   );
+}
+
+/**
+ * The same item on an approved or indexed page: kind, attribution and activity status as static pills, the summary
+ * as text, and "Source: bN" chips that only scroll the document. No editing control is rendered (design Decision 4).
+ */
+function ReadOnlyEvidenceCard({ experienceIndex, evidenceIndex, item, blocksById, blockNumbers, onShowSpan }: ReadOnlyEvidenceCardProps) {
+  return (
+    <li id={evidenceAnchorId(experienceIndex, evidenceIndex)} className="scroll-mt-24 rounded-control border border-hairline bg-card p-3">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Pill>
+          <span className="sr-only">Kind: </span>
+          {item.kind}
+        </Pill>
+        <Pill>
+          <span className="sr-only">Attribution: </span>
+          {item.attribution}
+        </Pill>
+        <Pill>
+          <span className="sr-only">Activity status: </span>
+          {item.activity_status}
+        </Pill>
+      </div>
+
+      <div className="mt-2">
+        <StaticField label="Evidence summary" value={item.summary} multiline />
+      </div>
+
+      {item.source_refs.length > 0 && (
+        <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Source spans">
+          {item.source_refs.map((span, spanIndex) => (
+            <li
+              key={`${span.block_id}:${span.start}:${span.end}:${spanIndex}`}
+              className="inline-flex max-w-full items-center rounded-full border border-evidence-border bg-evidence-wash text-label-md text-evidence-text"
+            >
+              <SourceLink
+                span={span}
+                label={spanLabel(blockNumbers, span)}
+                blocksById={blocksById}
+                className="py-0.5 pl-2 pr-2"
+                onClick={() => onShowSpan(spanIndex)}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+export default function EvidenceCard(props: EvidenceCardProps) {
+  return props.mode === "read" ? <ReadOnlyEvidenceCard {...props} /> : <EditableEvidenceCard {...props} />;
 }

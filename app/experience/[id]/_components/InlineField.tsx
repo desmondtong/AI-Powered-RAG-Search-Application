@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { EditIcon } from "@/app/components/icons";
 
 /**
  * A value shown as text that turns into an input when activated. Enter or blur commits, Escape cancels. Multiline
@@ -99,11 +100,13 @@ export default function InlineField({
             setText(value);
             setEditing(true);
           }}
-          className={`-mx-1 block w-[calc(100%+0.5rem)] rounded-control px-1 py-0.5 text-left text-body-md hover:bg-subtle ${
+          className={`group -mx-1 flex w-[calc(100%+0.5rem)] items-start justify-between gap-2 rounded-control px-1 py-0.5 text-left text-body-md hover:bg-subtle ${
             value ? "text-ink" : "italic text-ink-muted"
-          } ${invalid ? "ring-1 ring-red" : ""} whitespace-pre-wrap break-words`}
+          } ${invalid ? "ring-1 ring-red" : ""}`}
         >
-          {value || placeholder}
+          <span className="min-w-0 whitespace-pre-wrap break-words">{value || placeholder}</span>
+          {/* Visible before hover, so an editable field never looks like read-only text. */}
+          <EditIcon size={14} className="mt-1 shrink-0 text-ink-muted group-hover:text-cobalt group-focus-visible:text-cobalt" />
         </button>
       )}
       {caption && <div className="text-body-sm text-ink-muted">{caption}</div>}

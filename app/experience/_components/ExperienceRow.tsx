@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useState, type MouseEvent } from "react";
 import { ArrowIcon } from "@/app/components/icons";
 import { useNotice } from "@/app/components/NoticeProvider";
 import {
@@ -28,16 +29,25 @@ export const TONE_TEXT: Record<StageTone, string> = {
 };
 
 /**
- * One experience file on the list: name, meta line, six-dot stepper, stage label, helper, exactly one primary
- * button and an overflow menu. Row buttons open the file page, where every stage action runs.
+ * One experience file on the list: name, meta line, six-dot stepper, stage label, helper, at most one primary
+ * button and an overflow menu. The whole row opens the file page; a primary button appears only while the file is
+ * waiting on the user, and every stage action runs on the file page.
  */
 export default function ExperienceRow({ source, onChanged }: { source: SourceSummary; onChanged: () => Promise<unknown> }) {
   const view = toStageView(source);
   const href = `/experience/${source.id}`;
+  const router = useRouter();
   const [confirming, setConfirming] = useState<null | "delete" | "retry-delete">(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const notice = useNotice();
+
+  /** The row is the link by delegation: its own controls and a text selection keep their behaviour (design Decision 3). */
+  const openFromRow = (event: MouseEvent<HTMLLIElement>) => {
+    if ((event.target as HTMLElement).closest("a, button, [role='menu']")) return;
+    if (window.getSelection()?.isCollapsed === false) return;
+    router.push(href);
+  };
 
   const remove = async () => {
     setBusy(true);
@@ -69,14 +79,14 @@ export default function ExperienceRow({ source, onChanged }: { source: SourceSum
     }
   }
 
-  const primaryHref = view.primary?.id === "try-jd" ? "/" : view.primary?.id === "upload-different" ? "/experience" : href;
+  const primaryHref = view.primary?.id === "upload-different" ? "/experience" : href;
   const dated = view.metaFact ?? (source.updated_at ? `Updated ${formatTimestamp(source.updated_at)}` : "");
   const meta = [fileTypeLabel(source.file_type, source.file_name), formatFileSize(source.file_size), dated]
     .filter(Boolean)
     .join(" · ");
 
   return (
-    <li className="rounded-panel border border-hairline bg-card p-4 sm:p-5">
+    <li onClick={openFromRow} className="cursor-pointer rounded-panel border border-hairline bg-card p-4 transition-colors hover:border-hairline-strong sm:p-5">
       <div className="flex flex-col gap-4 md:flex-row md:items-center">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -99,16 +109,13 @@ export default function ExperienceRow({ source, onChanged }: { source: SourceSum
               {view.primary.label}
               <ArrowIcon size={16} />
             </ButtonLink>
-          ) : view.tone === "progress" ? (
-            <span className="text-body-md text-ink-muted" aria-hidden>
-              Working…
-            </span>
           ) : null}
           {view.primary?.id === "retry-delete" ? null : <OverflowMenu items={overflow} label={`More actions for ${source.file_name}`} />}
         </div>
       </div>
       {confirming && (
-        <div className="mt-4">
+        // The confirmation lives inside the row; a click on its text must not open the file page.
+        <div className="mt-4" onClick={(event) => event.stopPropagation()}>
           <ConfirmInline
             title={confirming === "retry-delete" ? DELETE_CONFIRM.retryTitle : DELETE_CONFIRM.title(source.file_name)}
             body={confirming === "retry-delete" ? DELETE_CONFIRM.retryBody : DELETE_CONFIRM.body}

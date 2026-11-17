@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { useLeaveGuard } from "@/app/components/LeaveGuardProvider";
 import type { StageView } from "@/app/lib/experience/workspace/stage";
 import { TONE_TEXT } from "../../_components/ExperienceRow";
 import OverflowMenu, { type OverflowItem } from "../../_components/OverflowMenu";
@@ -32,10 +35,17 @@ export default function StageHeader({
   status?: ReactNode;
   overflow: OverflowItem[];
 }) {
+  const { intercept } = useLeaveGuard();
   return (
     <header className="rounded-panel border border-hairline bg-card p-4 sm:p-6">
       <nav aria-label="Breadcrumb" className="text-body-sm text-ink-muted">
-        <Link href="/experience" className="hover:text-cobalt">
+        <Link
+          href="/experience"
+          onNavigate={(event) => {
+            if (intercept("/experience")) event.preventDefault();
+          }}
+          className="hover:text-cobalt"
+        >
           Experience
         </Link>
         <span aria-hidden> / </span>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV, PRODUCT_NAME, indexedPill } from "@/app/lib/experience/workspace/copy";
+import { useLeaveGuard } from "./LeaveGuardProvider";
 import { useWorkspaceSummary } from "./WorkspaceSummaryProvider";
 
 const DESTINATIONS = [
@@ -13,11 +14,16 @@ const DESTINATIONS = [
 export default function TopBar() {
   const pathname = usePathname() ?? "/";
   const { indexedCount } = useWorkspaceSummary();
+  const { intercept } = useLeaveGuard();
+  /** Holds the navigation while the open page has unsaved edits (design Decision 5). */
+  const guarded = (href: string) => (event: { preventDefault: () => void }) => {
+    if (intercept(href)) event.preventDefault();
+  };
 
   return (
     <header className="sticky top-0 z-30 h-14 border-b border-hairline bg-card">
       <div className="mx-auto flex h-full max-w-[1536px] items-center gap-4 px-4 sm:gap-8 sm:px-6">
-        <Link href="/" className="flex shrink-0 items-center gap-2 font-heading text-title-sm font-bold text-ink">
+        <Link href="/" onNavigate={guarded("/")} className="flex shrink-0 items-center gap-2 font-heading text-title-sm font-bold text-ink">
           <span aria-hidden className="grid size-6 place-items-center rounded-control bg-cobalt text-label-md text-on-cobalt">
             JD
           </span>
@@ -31,6 +37,7 @@ export default function TopBar() {
               <Link
                 key={destination.href}
                 href={destination.href}
+                onNavigate={guarded(destination.href)}
                 aria-current={current ? "page" : undefined}
                 className={`flex items-center border-b-2 px-2 text-body-md font-semibold ${
                   current ? "border-cobalt text-cobalt" : "border-transparent text-ink-secondary hover:text-ink"

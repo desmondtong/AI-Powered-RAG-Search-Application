@@ -90,6 +90,24 @@ try {
         published = true;
         return route.fulfill({ json: { status: "indexed", progress: { total_chunks: 4, prepared_chunks: 4, remaining_chunks: 0 } } });
       }
+      if (/^\/api\/experiences\/retry-fixture\/revisions\/[^/]+\/export$/.test(url.pathname) && request.method() === "GET") {
+        // Approved and indexed pages show the latest approved revision read-only from its export.
+        const revisionId = url.pathname.split("/")[5];
+        return route.fulfill({
+          json: {
+            revision: {
+              revision: { revision_id: revisionId, status: "approved", draft_version: 1 },
+              experiences: [],
+              review_acknowledgements: { warnings: true, unassigned_blocks: true },
+            },
+            source_blocks: [],
+            content_hash: "synthetic",
+            exported_at: "2026-11-16T00:00:00.000Z",
+            resolved_source_refs: [],
+            configuration_versions: {},
+          },
+        });
+      }
       unexpected.push(request.url());
       return route.abort();
     });
@@ -102,7 +120,7 @@ try {
     const text = () => page.locator("body").innerText();
     // Revisions are named by version number; no revision ID reaches the main view.
     await page.locator("body").ariaSnapshot();
-    assert.match(await text(), /Approved version 2 · ready for indexing/);
+    assert.match(await text(), /Version 2 approved · not indexed/);
     assert.doesNotMatch(await text(), /\br[012]\b/);
     assert.equal(context.pages().length, 1);
     await indexNow.click();
@@ -131,8 +149,19 @@ try {
       assert.match(snapshot, /Version 1 is still the one Fit Check searches\./);
       assert.equal(await page.getByRole("button", { name: "Look at version 3 first", exact: true }).count(), 1);
       await page.getByRole("button", { name: "Index version 3", exact: true }).click();
-      await page.getByRole("link", { name: "Try a job description" }).waitFor();
+      // The label is also announced through a visually hidden live region; wait for the visible one.
+      await page.getByText("Indexed · version 3", { exact: true }).last().waitFor();
       assert.deepEqual(posts, ["r1", "r2"], "Only an explicit Index version N may target the refreshed candidate");
+      // The indexed page has no primary action; the searchable notice is the only shortcut to Fit Check, and the
+      // approved revision is shown read-only from the export route.
+      await page.getByRole("button", { name: "Try a job description" }).waitFor();
+      assert.equal(await page.getByRole("link", { name: "Try a job description" }).count(), 0);
+      assert.equal(await page.getByRole("button", { name: /^(Index now|Index version \d+|Continue indexing)$/ }).count(), 0);
+      await page.getByText("This version has no experiences.").waitFor();
+      await page.getByRole("button", { name: "More actions for Synthetic retry fixture.docx" }).click();
+      await page.getByRole("menuitem", { name: "Inspect accepted JSON" }).waitFor();
+      await page.keyboard.press("Escape");
+      await page.getByRole("menu").waitFor({ state: "hidden" });
     } else if (scenario === "newer-published") {
       const snapshot = await text();
       assert.match(snapshot, /Searchable now\s*version 3/i);

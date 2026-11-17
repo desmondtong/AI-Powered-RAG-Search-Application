@@ -4,27 +4,38 @@ import { useEffect, useRef } from "react";
 import { WarningIcon } from "@/app/components/icons";
 import { Button } from "./ui";
 
-/** In-page confirmation for destructive actions. Never a native dialog. Escape or Cancel dismisses with no request. */
+/**
+ * In-page confirmation for destructive actions. Never a native dialog. Escape or Cancel dismisses with no request.
+ * An optional third action (`secondaryLabel`/`onSecondary`) sits between confirm and cancel; the leave guard uses it
+ * for "Save and leave", and the markup is unchanged when it is absent.
+ */
 export default function ConfirmInline({
   title,
   body,
   confirmLabel,
   cancelLabel,
+  secondaryLabel,
   busy,
+  secondaryBusy,
   error,
   onConfirm,
+  onSecondary,
   onCancel,
 }: {
   title: string;
   body: string;
   confirmLabel: string;
   cancelLabel: string;
+  secondaryLabel?: string;
   busy?: boolean;
+  secondaryBusy?: boolean;
   error?: string | null;
   onConfirm: () => void;
+  onSecondary?: () => void;
   onCancel: () => void;
 }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const anyBusy = Boolean(busy || secondaryBusy);
 
   useEffect(() => {
     cancelRef.current?.focus();
@@ -36,7 +47,7 @@ export default function ConfirmInline({
       aria-labelledby="confirm-inline-title"
       aria-describedby="confirm-inline-body"
       onKeyDown={(event) => {
-        if (event.key === "Escape" && !busy) {
+        if (event.key === "Escape" && !anyBusy) {
           event.preventDefault();
           onCancel();
         }
@@ -60,10 +71,15 @@ export default function ConfirmInline({
             </p>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button variant="destructive" onClick={onConfirm} busy={busy}>
+            <Button variant="destructive" onClick={onConfirm} busy={busy} disabled={secondaryBusy}>
               {confirmLabel}
             </Button>
-            <Button ref={cancelRef} variant="secondary" onClick={onCancel} disabled={busy}>
+            {secondaryLabel && onSecondary && (
+              <Button variant="primary" onClick={onSecondary} busy={secondaryBusy} disabled={busy}>
+                {secondaryLabel}
+              </Button>
+            )}
+            <Button ref={cancelRef} variant="secondary" onClick={onCancel} disabled={anyBusy}>
               {cancelLabel}
             </Button>
           </div>

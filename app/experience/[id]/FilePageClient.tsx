@@ -2,9 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLeaveGuard, type LeaveChoice } from "@/app/components/LeaveGuardProvider";
 import { useNotice } from "@/app/components/NoticeProvider";
 import { useWorkspaceSummary } from "@/app/components/WorkspaceSummaryProvider";
-import { ArrowIcon, BoltIcon } from "@/app/components/icons";
+import { BoltIcon, CloseIcon } from "@/app/components/icons";
 import { autostartKey } from "@/app/lib/experience/uploadUi";
 import { parseCiteParam, quoteFromBlocks, resolveCitation, type CitationResolution } from "@/app/lib/experience/workspace/citation";
 import {
@@ -13,6 +14,7 @@ import {
   DELETE_CONFIRM,
   EDIT_APPROVED_NOTE,
   INDEXING,
+  LEAVE_GUARD,
   NOTICES,
   PROCESSING,
   REVIEW,
@@ -29,7 +31,13 @@ import { blockNumbers as numberBlocks, evidenceHighlights, evidenceSpanKey, evid
 import { describeRevisions, versionForRevision } from "@/app/lib/experience/workspace/revisionLabels";
 import { rangeToSpan } from "@/app/lib/experience/workspace/selection";
 import { toStageView, type StageAction } from "@/app/lib/experience/workspace/stage";
-import { readApiErrorMessage, type AcceptedRevisionExport, type SourceDetail, type SourceSpan } from "@/app/lib/experience/workspace/types";
+import {
+  readApiErrorMessage,
+  type AcceptedRevisionExport,
+  type CanonicalRevision,
+  type SourceDetail,
+  type SourceSpan,
+} from "@/app/lib/experience/workspace/types";
 import ConfirmInline from "../_components/ConfirmInline";
 import type { OverflowItem } from "../_components/OverflowMenu";
 import { IN_PROGRESS_STATUSES, usePolling } from "../_components/usePolling";
@@ -44,6 +52,7 @@ import ExperienceRail, { experienceAnchorId } from "./_components/ExperienceRail
 import FailureInset from "./_components/FailureInset";
 import SpanPopover, { type PopoverState } from "./_components/SpanPopover";
 import StageHeader from "./_components/StageHeader";
+import { useApprovedView } from "./_hooks/useApprovedView";
 import { useDraftEditor, type UndoToken } from "./_hooks/useDraftEditor";
 import { useIndexSequence } from "./_hooks/useIndexSequence";
 import { useStageRunner } from "./_hooks/useStageRunner";
@@ -166,6 +175,16 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
   const labels = useMemo(() => blockLabels(blocks), [blocks]);
   const numbers = useMemo(() => numberBlocks(blocks), [blocks]);
 
+  // ---- Read-only approved view (design Decision 4) ---------------------------------------------------------
+  // Approved and indexed pages with no open draft show the latest approved revision from its export.
+  const approvedView = useApprovedView(
+    sourceId,
+    source?.latest_approved_revision_id ?? null,
+    Boolean(source && (source.status === "approved" || source.status === "indexed") && detail?.latest_revision?.status !== "draft"),
+  );
+  const approvedDoc = approvedView.status === "ready" ? approvedView.doc : null;
+  const approvedNumbers = useMemo(() => numberBlocks(approvedDoc?.source_blocks ?? []), [approvedDoc]);
+
   // ---- Citation from a Fit Check report ("Open in source") -------------------------------------------------
   const citeTarget = useMemo(() => parseCiteParam(cite, rev), [cite, rev]);
   const [citeQuote, setCiteQuote] = useState<{ quote: string | null; done: boolean }>({ quote: null, done: false });
@@ -189,13 +208,94 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
       cancelled = true;
     };
   }, [citeTarget, sourceId]);
+  // A citation resolves against the blocks the user sees: the approved export when the read-only view shows it.
+  const citationBlocks = approvedDoc?.source_blocks ?? blocks;
   const citation: CitationResolution | null =
-    citeTarget && citeQuote.done && detail ? resolveCitation(blocks, citeTarget, citeQuote.quote) : null;
+    citeTarget && citeQuote.done && detail ? resolveCitation(citationBlocks, citeTarget, citeQuote.quote) : null;
+
+  const approvedHighlights = useMemo(() => {
+    const map = evidenceHighlights(approvedDoc?.revision ?? null);
+    if (approvedDoc && citation?.kind === "highlight") {
+      const list = map.get(citation.span.block_id) ?? [];
+      map.set(citation.span.block_id, [...list, { key: CITATION_KEY, start: citation.span.start, end: citation.span.end }]);
+    }
+    return map;
+  }, [approvedDoc, citation]);
 
   // ---- Review workspace ------------------------------------------------------------------------------------
   const draft = editor.draft;
   const hasDraft = Boolean(draft && detail?.latest_revision?.status === "draft");
   const showReview = Boolean(view && hasDraft && (reviewing || view.primary?.id !== "start-review"));
+
+  // ---- Leave guard for unsaved edits (design Decision 5) ---------------------------------------------------
+  const { register, intercept, pending: leavePending, resolve: resolveLeave } = useLeaveGuard();
+  const dirtyRef = useRef(false);
+  const saveRef = useRef(editor.save);
+  useEffect(() => {
+    dirtyRef.current = editor.dirty;
+  }, [editor.dirty]);
+  useEffect(() => {
+    saveRef.current = editor.save;
+  }, [editor.save]);
+  useEffect(() => {
+    if (!hasDraft) return;
+    return register({ isDirty: () => dirtyRef.current, save: async () => (await saveRef.current()) !== null });
+  }, [hasDraft, register]);
+
+  // Browser-level exits (close, reload, a typed URL) get the browser's own prompt while the draft is dirty. A leave
+  // the user already chose in the in-page confirmation is not asked again, even when it unloads the document.
+  const leaving = useRef(false);
+  useEffect(() => {
+    if (!editor.dirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      if (leaving.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [editor.dirty]);
+
+  // The back button: while dirty, a duplicate history entry sits on top of this page, so Back first lands here,
+  // where the guard can ask. Leaving goes two steps back. A clean draft only forgets the entry; it is not popped,
+  // which would race a navigation started in the same tick.
+  const sentinel = useRef(false);
+  useEffect(() => {
+    if (editor.dirty && !sentinel.current) {
+      window.history.pushState(window.history.state, "", window.location.href);
+      sentinel.current = true;
+    } else if (!editor.dirty) {
+      sentinel.current = false;
+    }
+  }, [editor.dirty]);
+  useEffect(() => {
+    const onPopState = () => {
+      if (!sentinel.current) return;
+      if (intercept({ kind: "back" })) window.history.pushState(window.history.state, "", window.location.href);
+      else sentinel.current = false;
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [intercept]);
+
+  const [leaveSaving, setLeaveSaving] = useState(false);
+  const chooseLeave = async (choice: LeaveChoice) => {
+    leaving.current = choice !== "stay";
+    if (choice !== "save") {
+      await resolveLeave(choice);
+      // A history traversal unloads asynchronously; if the page is still here afterwards, exits must ask again.
+      if (choice === "leave") window.setTimeout(() => (leaving.current = false), 1500);
+      return;
+    }
+    setLeaveSaving(true);
+    try {
+      await resolveLeave("save");
+    } finally {
+      setLeaveSaving(false);
+      // A failed save keeps the user here, so browser-level exits must ask again.
+      leaving.current = !dirtyRef.current;
+    }
+  };
 
   const highlights = useMemo(() => {
     const map = evidenceHighlights(showReview ? draft : null);
@@ -251,8 +351,10 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
     }
   };
 
+  // A new selection while a popover is open replaces it: the press that starts the selection closes the old popover
+  // through Base UI's outside-press, and the release opens the next one from the new range.
   const onPointerSelect = () => {
-    if (!showReview || popover) return;
+    if (!showReview) return;
     requestAnimationFrame(() => {
       const selection = window.getSelection();
       if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
@@ -276,14 +378,16 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
     documentRef.current?.focus({ preventScroll: true });
   };
 
-  const showSpan = (experienceIndex: number, evidenceIndex: number, spanIndex: number) => {
+  /** "Source: bN" in either rail: emphasise the span and scroll to it, or to its block when the span is not drawn. */
+  const showSpanIn = (revision: CanonicalRevision | null) => (experienceIndex: number, evidenceIndex: number, spanIndex: number) => {
     const key = evidenceSpanKey(experienceIndex, evidenceIndex, spanIndex);
     setEmphasised(key);
     if (!scrollToId(spanAnchorId(key))) {
-      const span = draft?.experiences[experienceIndex]?.evidence_items[evidenceIndex]?.source_refs[spanIndex];
+      const span = revision?.experiences[experienceIndex]?.evidence_items[evidenceIndex]?.source_refs[spanIndex];
       if (span) scrollToId(blockAnchorId(span.block_id));
     }
   };
+  const showSpan = showSpanIn(draft);
 
   const selectFromSource = (experienceIndex: number, evidenceIndex: number) => {
     setSelecting({ experienceIndex, evidenceIndex });
@@ -405,6 +509,9 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
   const runAction = (id: ActionId) => {
     setActionError(null);
     switch (id) {
+      case "start-processing":
+        void runner.runChain("extract");
+        break;
       case "continue-processing":
         void runner.runChain(source?.status === "extracted" ? "parse" : "extract");
         break;
@@ -507,14 +614,6 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
       );
     }
     if (!action) return null;
-    if (action.id === "try-jd") {
-      return (
-        <ButtonLink href="/" variant="primary">
-          {action.label}
-          <ArrowIcon size={16} />
-        </ButtonLink>
-      );
-    }
     const disabled = busy || (INDEX_ACTIONS.has(action.id) && indexDisabled);
     return (
       <Button variant="primary" onClick={() => runAction(action.id)} disabled={disabled}>
@@ -631,7 +730,7 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
     : null;
 
   return (
-    <main className={`mx-auto w-full px-4 py-6 sm:px-6 ${showReview || citation ? "max-w-[1536px]" : "max-w-[1040px]"}`}>
+    <main className={`mx-auto w-full px-4 py-6 sm:px-6 ${showReview || citation || approvedView.status !== "idle" ? "max-w-[1536px]" : "max-w-[1040px]"}`}>
       <p aria-live="polite" className="sr-only">
         {view.label}
       </p>
@@ -682,7 +781,21 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
         />
       )}
 
-      {confirming && (
+      {leavePending ? (
+        <div className="mt-4">
+          <ConfirmInline
+            title={LEAVE_GUARD.title}
+            body={LEAVE_GUARD.body}
+            confirmLabel={LEAVE_GUARD.leave}
+            secondaryLabel={leaveSaving ? LEAVE_GUARD.saving : LEAVE_GUARD.save}
+            secondaryBusy={leaveSaving}
+            cancelLabel={LEAVE_GUARD.stay}
+            onConfirm={() => void chooseLeave("leave")}
+            onSecondary={() => void chooseLeave("save")}
+            onCancel={() => void chooseLeave("stay")}
+          />
+        </div>
+      ) : confirming ? (
         <div className="mt-4">
           <ConfirmInline
             title={confirming === "retry-delete" ? DELETE_CONFIRM.retryTitle : DELETE_CONFIRM.title(source.file_name)}
@@ -698,7 +811,7 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
             }}
           />
         </div>
-      )}
+      ) : null}
 
       {exportDoc && <AcceptedJsonPanel title={exportDoc.title} exportDoc={exportDoc.doc} onClose={() => setExportDoc(null)} />}
 
@@ -718,9 +831,17 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
         <div className="mt-6 grid gap-6 lg:grid-cols-12">
           <div className="min-w-0 lg:col-span-8">
             {selectionHint && (
-              <p className="mb-2 rounded-control border border-evidence-border bg-evidence-wash px-3 py-2 text-body-md text-evidence-text">
-                {selectionHint}
-              </p>
+              <div className="mb-2 flex items-start justify-between gap-2 rounded-control border border-evidence-border bg-evidence-wash px-3 py-2 text-body-md text-evidence-text">
+                <p>{selectionHint}</p>
+                <button
+                  type="button"
+                  onClick={() => setSelectionHint(null)}
+                  aria-label="Dismiss hint"
+                  className="grid size-6 shrink-0 place-items-center rounded-control hover:bg-card"
+                >
+                  <CloseIcon size={12} />
+                </button>
+              </div>
             )}
             <DocumentPane
               ref={documentRef}
@@ -751,6 +872,7 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
               />
               <div className="mt-4 lg:mt-0">
                 <ExperienceRail
+                  mode="edit"
                   draft={draft}
                   blocks={blocks}
                   blockNumbers={numbers}
@@ -771,6 +893,34 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
             </div>
           </div>
         </div>
+      ) : approvedView.status !== "idle" ? (
+        approvedDoc ? (
+          <div className="mt-6 grid gap-6 lg:grid-cols-12">
+            <div className="min-w-0 lg:col-span-8">
+              <DocumentPane blocks={approvedDoc.source_blocks} highlights={approvedHighlights} emphasised={emphasised} />
+            </div>
+            <div className="min-w-0 lg:col-span-4">
+              <div className="lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-auto lg:pr-1">
+                <ExperienceRail
+                  mode="read"
+                  draft={approvedDoc.revision}
+                  blocks={approvedDoc.source_blocks}
+                  blockNumbers={approvedNumbers}
+                  onShowSpan={showSpanIn(approvedDoc.revision)}
+                />
+              </div>
+            </div>
+          </div>
+        ) : approvedView.status === "error" ? (
+          <div role="alert" className="mt-6 rounded-panel border border-red-border bg-red-wash p-5">
+            <p className="text-body-md text-ink">{approvedView.error}</p>
+            <Button className="mt-3" onClick={approvedView.retry}>
+              Try again
+            </Button>
+          </div>
+        ) : (
+          <p className="mt-6 rounded-panel border border-hairline bg-card p-6 text-body-md text-ink-secondary">Loading the approved version…</p>
+        )
       ) : citation?.kind === "highlight" ? (
         <div className="mt-6">
           <DocumentPane blocks={blocks} highlights={highlights} />
@@ -782,6 +932,7 @@ export default function FilePageClient({ sourceId, cite, rev }: { sourceId: stri
           state={popover}
           targets={targets}
           preferred={selecting}
+          documentRef={documentRef}
           onAdd={addSpan}
           onClose={closePopover}
         />

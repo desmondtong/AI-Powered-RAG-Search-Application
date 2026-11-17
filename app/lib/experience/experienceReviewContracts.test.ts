@@ -75,6 +75,40 @@ describe("experience review UI contracts", () => {
     assert.match(read("app/experience/[id]/_components/DocumentPane.tsx"), /whitespace-pre-wrap/);
   });
 
+  it("renders the read-only rail without any editing control", () => {
+    const readOnly: Array<[string, string]> = [
+      ["app/experience/[id]/_components/ExperienceRail.tsx", "ReadOnlyExperienceCard"],
+      ["app/experience/[id]/_components/EvidenceCard.tsx", "ReadOnlyEvidenceCard"],
+    ];
+    for (const [file, name] of readOnly) {
+      const source = read(file);
+      const start = source.indexOf(`function ${name}(`);
+      assert.notEqual(start, -1, `${file} defines ${name}`);
+      const body = source.slice(start, source.indexOf("\n}\n", start));
+      for (const token of ["InlineField", "PillSelect", "MISSING_SPAN", "onRemove", "onSelectFromSource", "<select", "<input", "<textarea"]) {
+        assert.ok(!body.includes(token), `${name} must not render ${token}`);
+      }
+    }
+    assert.doesNotMatch(read("app/experience/[id]/_components/StaticField.tsx"), /<button|<input|<select|<textarea|onClick/);
+  });
+
+  it("builds the span popover and overflow menu on Base UI without hand-rolled positioning or focus code", () => {
+    const popover = read("app/experience/[id]/_components/SpanPopover.tsx");
+    assert.match(popover, /from "@base-ui\/react\/popover"/);
+    assert.match(popover, /collisionPadding=\{/, "the popover stays inside the viewport");
+    assert.match(popover, /finalFocus=\{documentRef\}/, "focus returns to the document on close");
+    assert.match(popover, /initialFocus=\{/);
+    assert.match(popover, /modal=\{false\}/, "the selection and the rest of the page stay usable");
+    assert.doesNotMatch(popover, /position: "fixed"|innerWidth|innerHeight/, "no fixed-position arithmetic");
+    assert.doesNotMatch(popover, /addEventListener\("pointerdown"/);
+
+    const menu = read("app/experience/_components/OverflowMenu.tsx");
+    assert.match(menu, /from "@base-ui\/react\/menu"/);
+    assert.match(menu, /<Menu\.LinkItem/, "link entries stay real links");
+    assert.match(menu, /modal=\{false\}/, "the page keeps scrolling while a menu is open");
+    assert.doesNotMatch(menu, /addEventListener\("pointerdown"|querySelectorAll|role="menuitem"/, "Base UI owns focus and roles");
+  });
+
   it("approves with the draft version the save returned and sends no approval when the save fails", () => {
     const editor = read(EDITOR);
     assert.match(editor, /fetch\(`\/api\/experiences\/\$\{sourceId\}\/approve`/);

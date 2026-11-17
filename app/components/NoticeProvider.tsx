@@ -4,6 +4,7 @@ import { Toast } from "@base-ui/react/toast";
 import { useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import { CheckIcon, CloseIcon } from "./icons";
+import { useLeaveGuard } from "./LeaveGuardProvider";
 
 /** A notice may carry one action: a handler, a link, or both. */
 export interface NoticeAction {
@@ -63,12 +64,16 @@ export function useNotice(): Notice {
  */
 export function NoticeProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const { intercept } = useLeaveGuard();
   useEffect(() => {
-    navigate = (href) => router.push(href);
+    // A notice link is an in-app navigation, so it waits for the leave guard like any other link.
+    navigate = (href) => {
+      if (!intercept(href)) router.push(href);
+    };
     return () => {
       navigate = null;
     };
-  }, [router]);
+  }, [router, intercept]);
 
   return (
     <Toast.Provider toastManager={manager} limit={1} timeout={5000}>

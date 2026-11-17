@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { EXPLANATIONS, HOW_IT_WORKS, STAGE_COPY, indexedPill } from "./copy";
+import { ACTION_LABELS, EXPLANATIONS, HOW_IT_WORKS, NOTICES, STAGE_COPY, indexedPill } from "./copy";
 import { toStageView } from "./stage";
 import type { CanonicalRevision, SourceDetail, SourceSummary } from "./types";
 
@@ -137,6 +137,14 @@ describe("copy classes", () => {
       STAGE_COPY.draftNew("Draft for version 1", { experiences: 1, evidence: 1, warnings: 0, unassigned: 0 }).fact,
       "We found 1 experience and 1 evidence item.",
     );
+  });
+
+  it("keeps Try a job description on the searchable notice only, never as a stage action", () => {
+    assert.ok(!(Object.values(ACTION_LABELS) as string[]).includes("Try a job description"));
+    assert.ok(!("try-jd" in ACTION_LABELS));
+    assert.equal(NOTICES.tryJd, "Try a job description");
+    assert.equal(ACTION_LABELS["start-processing"], "Start processing");
+    assert.equal(ACTION_LABELS["continue-processing"], "Continue processing");
   });
 
   it("the top-bar pill does not restate that indexed files are searchable", () => {

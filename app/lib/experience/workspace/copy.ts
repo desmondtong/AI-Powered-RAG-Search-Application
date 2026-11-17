@@ -53,6 +53,7 @@ export const DROP_ZONE = {
 } as const;
 
 export const ACTION_LABELS = {
+  "start-processing": "Start processing",
   "continue-processing": "Continue processing",
   "retry-extract": "Retry extract",
   "retry-parse": "Retry parse",
@@ -61,7 +62,6 @@ export const ACTION_LABELS = {
   "index-now": "Index now",
   "continue-indexing": "Continue indexing",
   "retry-index": "Retry indexing",
-  "try-jd": "Try a job description",
   "edit-approved": "Edit",
   reparse: "Re-parse into a new draft",
   "download-original": "Download original",
@@ -100,7 +100,7 @@ function draftFact(experiences: number, evidence: number, warnings: number, unas
 
 /** Per-state stage copy (design Decision 2). `version` is the approved version number shown in labels. */
 export const STAGE_COPY = {
-  uploaded: { label: "Uploaded", instruction: "Continue processing to read the text." },
+  uploaded: { label: "Uploaded", instruction: "Start processing to read the text." },
   extracting: { label: "Extracting text", instruction: LEAVE },
   extracted: { label: "Text extracted", instruction: "Continue processing to find the projects in it." },
   parsing: { label: "Finding projects and evidence", instruction: LEAVE },
@@ -157,6 +157,8 @@ export const NOTICES = {
   approved: (version: number | null) => (version === null ? "Version approved." : `Version ${version} approved.`),
   searchable: (version: number | null) =>
     version === null ? "The file is searchable in Fit Check." : `Version ${version} is searchable in Fit Check.`,
+  /** The searchable notice's action: the only shortcut from an indexing outcome to Fit Check. */
+  tryJd: "Try a job description",
   draftCreated: (version: number) => `Draft for version ${version} created.`,
   evidenceRemoved: "Evidence removed.",
   spanRemoved: "Span removed.",
@@ -251,6 +253,16 @@ export const DELETE_CONFIRM = {
   retryBody: "The file is already not searchable. This retries removing the stored original.",
   retryConfirm: "Retry cleanup",
   cancel: "Cancel",
+} as const;
+
+/** The in-page confirmation shown when an in-app link is activated while the draft has unsaved edits. */
+export const LEAVE_GUARD = {
+  title: "Leave without saving?",
+  body: "This draft has unsaved changes.",
+  leave: "Leave without saving",
+  save: "Save and leave",
+  stay: "Stay",
+  saving: "Saving…",
 } as const;
 
 export const FAILURE = {

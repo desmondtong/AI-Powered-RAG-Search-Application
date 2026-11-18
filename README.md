@@ -38,13 +38,7 @@ The project is spec-driven with [OpenSpec](https://github.com/Fission-AI/OpenSpe
 
 ## Roadmap
 
-I built this to learn RAG properly: grounded extraction, chunking, retrieval, citation validation and evaluation. The next step is to turn the single pipeline into an agentic, multi-agent workflow for the same job-fit use case, keeping the rule that every claim must cite approved evidence. None of the following is built yet:
-
-- **Agentic retrieval.** An agent that rewrites the query and searches again when a requirement's evidence is thin, instead of one fixed top-8 search.
-- **Specialist agents.** Separate agents for requirement analysis, evidence retrieval and fit assessment, coordinated by an orchestrator, with the deterministic citation validator kept as the final gate.
-- **Gap coaching.** An agent that turns Weak and Missing requirements into concrete next steps, such as evidence to add to an experience file.
-- **Grounded application drafts.** Cover-letter and résumé-bullet drafts in which every sentence cites approved evidence.
-- **Agent evaluation.** Extending the eval harness from final reports to agent trajectories (tool calls, steps, cost and latency) alongside the existing citation metrics.
+I built this to learn RAG in depth. Next, I plan to evolve it into an agentic, multi-agent workflow for the same job-fit use case, keeping the rule that every claim cites approved evidence.
 
 ## Pages
 
@@ -180,7 +174,7 @@ The original file bytes live in the private `experience-sources` storage bucket,
 | `unsupported_positive_claims` | Expected gaps reported as Strong or Partial (count; must be 0 in both modes) |
 | `gap_visibility` | Expected gaps listed in the report's gaps |
 
-The offline eval, the three unit suites, the Playwright browser test and the Docker image check are all required CI checks on `main` (see [CI and deployment](#ci-and-deployment)). Fixture format, thresholds, failure categories and the live workflow are documented in the [eval README](app/lib/ragQualityEvals/README.md).
+The offline eval, the three unit suites, the Playwright browser test and the Docker image check are all required CI checks on `main` (see [Branches and CI](#branches-and-ci)). Fixture format, thresholds, failure categories and the live workflow are documented in the [eval README](app/lib/ragQualityEvals/README.md).
 
 ## Running locally
 
@@ -244,6 +238,6 @@ Open [http://localhost:3000](http://localhost:3000), upload an experience file o
 
 `npm run capture:screenshots` regenerates the README images from synthetic data. Agent and IDE tooling (Supabase MCP), legacy remote objects and verification reports are in [docs/development.md](docs/development.md).
 
-## CI and deployment
+## Branches and CI
 
-Every pull request must pass three required CI jobs before it can merge: `checks` (the unit suites, the offline RAG eval, OpenSpec validation, lint, typecheck and build), `browser` (Playwright against the production build, with every API call mocked) and `image` (the production Docker image, checked for `pdftotext`, for baked-in secrets and for a server that answers). Merges to `main` then deploy automatically to Cloud Run behind Identity-Aware Proxy, signing in to Google Cloud through keyless Workload Identity Federation. The full CI reference and branch workflow are in [docs/development.md](docs/development.md#branches-and-ci), and setup, rollback and secret rotation in [docs/deploy.md](docs/deploy.md).
+Each change gets its own branch and pull request, and merges only once the three required CI jobs pass: unit suites with the offline RAG eval, a Playwright browser test, and a production Docker image check. Merges to `main` deploy automatically to Cloud Run behind IAP. Details are in [docs/development.md](docs/development.md#branches-and-ci) and [docs/deploy.md](docs/deploy.md).

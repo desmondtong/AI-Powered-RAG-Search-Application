@@ -13,6 +13,7 @@
     "test:rag-eval": "npm run build:rag-eval && node --test \".rag-eval-test-build/app/lib/ragQualityEvals/**/*.test.js\"",
     "eval:rag": "npm run build:rag-eval && node .rag-eval-test-build/app/lib/ragQualityEvals/cli/offline.js",
     "test:browser": "node scripts/test-browser.mjs",
+    "capture:screenshots": "node scripts/capture-screenshots.mjs",
     "eval:rag:live": "npm run build:rag-eval && node --env-file-if-exists=.env.local .rag-eval-test-build/app/lib/ragQualityEvals/cli/live.js",
     "rag-eval:corpus": "npm run build:rag-eval && node --env-file-if-exists=.env.local .rag-eval-test-build/app/lib/ragQualityEvals/cli/corpus.js"
   },

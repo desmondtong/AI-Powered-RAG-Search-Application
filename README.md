@@ -36,6 +36,16 @@ You upload your own experience files (DOCX or selectable-text PDF), review the s
 
 The project is spec-driven with [OpenSpec](https://github.com/Fission-AI/OpenSpec): every feature started as a proposal, a design and a task list, and all of them are in [`openspec/`](openspec/), with completed changes under [`openspec/changes/archive/`](openspec/changes/archive/) and the resulting specs under [`openspec/specs/`](openspec/specs/). I wrote the proposals and designs and reviewed the generated plans and the critical code; an AI coding agent wrote the implementation.
 
+## Roadmap
+
+I built this to learn RAG properly: grounded extraction, chunking, retrieval, citation validation and evaluation. The next step is to turn the single pipeline into an agentic, multi-agent workflow for the same job-fit use case, keeping the rule that every claim must cite approved evidence. None of the following is built yet:
+
+- **Agentic retrieval.** An agent that rewrites the query and searches again when a requirement's evidence is thin, instead of one fixed top-8 search.
+- **Specialist agents.** Separate agents for requirement analysis, evidence retrieval and fit assessment, coordinated by an orchestrator, with the deterministic citation validator kept as the final gate.
+- **Gap coaching.** An agent that turns Weak and Missing requirements into concrete next steps, such as evidence to add to an experience file.
+- **Grounded application drafts.** Cover-letter and résumé-bullet drafts in which every sentence cites approved evidence.
+- **Agent evaluation.** Extending the eval harness from final reports to agent trajectories (tool calls, steps, cost and latency) alongside the existing citation metrics.
+
 ## Pages
 
 The top bar has three destinations, a pill counting the indexed files, and an account avatar whose menu opens Settings.
@@ -170,7 +180,7 @@ The original file bytes live in the private `experience-sources` storage bucket,
 | `unsupported_positive_claims` | Expected gaps reported as Strong or Partial (count; must be 0 in both modes) |
 | `gap_visibility` | Expected gaps listed in the report's gaps |
 
-The offline eval, the three unit suites, the Playwright browser test and the Docker image check are all required CI checks on `main` (see [Branches and CI](#branches-and-ci)). Fixture format, thresholds, failure categories and the live workflow are documented in the [eval README](app/lib/ragQualityEvals/README.md).
+The offline eval, the three unit suites, the Playwright browser test and the Docker image check are all required CI checks on `main` (see [CI and deployment](#ci-and-deployment)). Fixture format, thresholds, failure categories and the live workflow are documented in the [eval README](app/lib/ragQualityEvals/README.md).
 
 ## Running locally
 
@@ -232,43 +242,8 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000), upload an experience file on the Experience page, approve and index it, then paste a job description on Fit Check.
 
-The checks CI runs are listed under [Branches and CI](#branches-and-ci). `npm run capture:screenshots` regenerates the README images from synthetic data. Agent and IDE tooling (Supabase MCP), legacy remote objects and verification reports are in [docs/development.md](docs/development.md).
+`npm run capture:screenshots` regenerates the README images from synthetic data. Agent and IDE tooling (Supabase MCP), legacy remote objects and verification reports are in [docs/development.md](docs/development.md).
 
-## Deploying
+## CI and deployment
 
-The app runs on Google Cloud Run in `australia-southeast1`. Identity-Aware Proxy lets in only the owner's Google account, and every push to `main` that passes CI deploys automatically through keyless Workload Identity Federation. One-time setup, IAP, rollback and secret rotation are in [docs/deploy.md](docs/deploy.md).
-
-## Branches and CI
-
-Work is organised around OpenSpec changes, and the git rules follow from that.
-
-- **One branch per change, named after the change id.** Cut it from `main` before the proposal is committed:
-
-  ```bash
-  git switch -c <change-id> main
-  ```
-
-- **All three commits land on the branch**: `docs: propose <change-id>`, the implementation, and `chore: archive <change-id>` as the last commit. `main` therefore never holds an active change.
-- **`main` is updated only through a pull request**, merged with "rebase and merge" once all required CI checks are green. The branch is deleted on merge, locally and on origin.
-- **Parallel changes use one git worktree each**, outside the repository, with its own install and env file:
-
-  ```bash
-  git worktree add ../rag-worktrees/<change-id> -b <change-id> main
-  cp .env.local ../rag-worktrees/<change-id>/.env.local
-  (cd ../rag-worktrees/<change-id> && npm ci)
-  ```
-
-  Every worktree shares the same remote Supabase project, so only one in-flight change may touch `supabase/` at a time. A second worktree running the browser test needs its own port: `EXPERIENCE_PREVIEW_PORT=3034 npm run test:browser`.
-
-CI runs on every pull request and on pushes to `main` ([ci.yml](.github/workflows/ci.yml)). Three jobs are required checks, and a fourth deploys `main`:
-
-| Job | Runs |
-| --- | --- |
-| `checks` | `npm run test:experience`, `npm run test:jd-fit`, `npm run test:rag-eval`, `npm run eval:rag` (offline retrieval-quality eval), `openspec validate --all`, `npm run lint`, `npx tsc --noEmit`, `npm run build` |
-| `browser` | `npx playwright install --with-deps chromium`, then `npm run test:browser` |
-| `image` | `docker build` of the production image, then checks that `pdftotext` is present, that no secret or Supabase URL is baked in, and that the server answers |
-| `deploy` | Only on `main`, after the three jobs pass and once the GCP repository variables exist: pushes the image and deploys it to Cloud Run ([docs/deploy.md](docs/deploy.md)) |
-
-`npm run test:browser` builds the app, serves it on port 3033, drives the four indexing-conflict scenarios and the oversized-upload check in headless Chromium with every API call intercepted, and stops the server. It never reaches Supabase or Gemini, so CI uses placeholder values for the environment variables the build reads. The live RAG eval, corpus seeding and the SQL checks in `supabase/checks` need the real project and stay manual.
-
-A new test file inside an existing suite's folder runs in CI automatically. A new suite or job needs a step in `ci.yml`, and a new job also needs adding to the required checks on `main`. Locally, install the browser once with `npx playwright install chromium`; if a server is left behind after an interrupted run, `lsof -i :3033` finds it.
+Every pull request must pass three required CI jobs before it can merge: `checks` (the unit suites, the offline RAG eval, OpenSpec validation, lint, typecheck and build), `browser` (Playwright against the production build, with every API call mocked) and `image` (the production Docker image, checked for `pdftotext`, for baked-in secrets and for a server that answers). Merges to `main` then deploy automatically to Cloud Run behind Identity-Aware Proxy, signing in to Google Cloud through keyless Workload Identity Federation. The full CI reference and branch workflow are in [docs/development.md](docs/development.md#branches-and-ci), and setup, rollback and secret rotation in [docs/deploy.md](docs/deploy.md).

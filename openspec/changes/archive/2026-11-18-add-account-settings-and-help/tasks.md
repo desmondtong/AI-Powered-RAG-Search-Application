@@ -92,7 +92,8 @@
   - Contrast on every touched screen in both themes.
 
   Record the steps, observations and screenshots in the implementation summary.
-- [ ] 6.3 After merge and auto-deploy, open the hosted URL. Verify the avatar shows the owner's initial and the menu shows the owner's email. If it shows the neutral avatar, apply the JWT-payload fallback from design.md's Risks, add its unit test, and redeploy.
+- [x] 6.3 After merge and auto-deploy, open the hosted URL. Verify the avatar shows the owner's initial and the menu shows the owner's email. If it shows the neutral avatar, apply the JWT-payload fallback from design.md's Risks, add its unit test, and redeploy.
+  - 2026-11-18, after PR #8 deployed (run 44265544732): on the hosted `/help` the avatar showed the signed-in Google account's initial, not the neutral icon. Its label and the menu showed the plain email, with the `accounts.google.com:` prefix stripped, and the menu held only Settings (`/settings`). IAP forwards the email header to Cloud Run, so the JWT fallback is not needed.
 
 ## Workflow follow-up
 

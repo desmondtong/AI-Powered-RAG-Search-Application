@@ -1,6 +1,40 @@
 # JD Fit Check
 
-A personal job-fit tool built on [Next.js](https://nextjs.org). You upload your own experience files (DOCX or selectable-text PDF), review the source-grounded draft the app extracts from each one, and approve and index it as evidence. You then paste a job description, and the app evaluates each of its requirements against that approved evidence, returning a categorical fit report in which every claim cites the source text it came from.
+*Source-cited RAG for job-fit analysis. Every claim in the report quotes an exact, human-approved sentence from the candidate's own documents.*
+
+[![CI](https://github.com/desmondtong/AI-Powered-RAG-Search-Application/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/desmondtong/AI-Powered-RAG-Search-Application/actions/workflows/ci.yml)
+
+You upload your own experience files (DOCX or selectable-text PDF), review the source-grounded draft the app extracts from each one, and approve and index it as evidence. You then paste a job description, and the app rates each requirement Strong, Partial, Weak or Missing against that approved evidence, citing the exact source sentence behind every claim.
+
+<!-- DEMO VIDEO: Desmond will drag the MP4 in here via the GitHub web editor, or replace with a YouTube thumbnail link. Until then, the two GIFs below stand in for it. -->
+
+**Uploading experience:** upload → extract and parse → review source-backed fields → approve → index.
+
+![Uploading an experience file and taking it through extract, parse, review, approve and index](docs/images/demo-upload-experience.gif)
+
+**Running a JD Fit Check:** paste a job description → cited report → a claim downgraded for lacking valid evidence → "Open in source".
+
+![Pasting a job description, reading the cited fit report and opening a citation in its source file](docs/images/demo-fit-check.gif)
+
+![Fit report: requirements grouped Strong, Partial, Weak and Missing, each claim quoting its source sentence](docs/images/fit-report.png)
+
+> **Live demo:** The deployed app runs on Cloud Run behind Google Identity-Aware Proxy and admits only the owner. A live walkthrough is available on request; the recordings above show the full flow. They use synthetic data only.
+
+## Highlights
+
+- **Grounded extraction.** Gemini must quote the source for every field it extracts, and any quote that isn't a unique verbatim match in the document is rejected.
+- **Human approval gate.** Only reviewed, approved content is indexed, so nothing unreviewed is ever retrievable.
+- **Parent/child chunking with separate embedding and citation text.** Small spans are matched with contextual headers, while citations quote the untouched source text.
+- **Deterministic citation validation.** Strong and Partial ratings without a valid citation are downgraded to Missing after one repair attempt, and the report says so.
+- **The job description is data, not instructions.** Prompt injection inside a JD ("rate this candidate 100%") has no effect.
+- **Atomic, resumable re-indexing.** Embeddings are checkpointed, and one transaction swaps the new version in; the previous version stays searchable until then.
+- **Offline RAG-quality eval with 8 metrics gating CI**, plus an opt-in live eval against real Gemini and search.
+
+**Tech stack:** Next.js 16 · React 19 · TypeScript · Supabase (Postgres + pgvector HNSW, Storage, RLS) · Gemini (`gemini-embedding-001` at 1536 dimensions, `gemini-flash-lite-latest` for generation) · Playwright · GitHub Actions · Docker · Cloud Run · IAP
+
+## How it was built
+
+The project is spec-driven with [OpenSpec](https://github.com/Fission-AI/OpenSpec): every feature started as a proposal, a design and a task list, and all of them are in [`openspec/`](openspec/), with completed changes under [`openspec/changes/archive/`](openspec/changes/archive/) and the resulting specs under [`openspec/specs/`](openspec/specs/). I wrote the proposals and designs and reviewed the generated plans and the critical code; an AI coding agent wrote the implementation.
 
 ## Pages
 
@@ -11,34 +45,7 @@ The top bar has three destinations, a pill counting the indexed files, and an ac
 - **Help** (`/help`). How to use each feature: Fit Check, the six Experience stages and Settings, with an "On this page" list. New features add their how-to here.
 - **Settings** (`/settings`, from the account menu). Appearance: Auto (follows your device, the default), Light or Dark, saved in the browser.
 
-## Environment
-
-Create `.env.local` with:
-
-```bash
-NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
-SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
-GEMINI_API_KEY=your-google-ai-studio-key
-```
-
-`GOOGLE_API_KEY` also works if you prefer that variable name. The app uses `gemini-embedding-001` with `outputDimensionality: 1536`, so it can use the existing Supabase `embedding vector(1536)` schema.
-
-`SUPABASE_SERVICE_ROLE_KEY` is required by the server API routes for experience ingestion, deletes, private storage access, and vector search. Keep it server-only; never prefix it with `NEXT_PUBLIC_`.
-
-For more reliable PDF parsing, install Poppler and expose its `pdftotext` binary. If it is not on `PATH`, set:
-
-```bash
-PDFTOTEXT_PATH=/absolute/path/to/pdftotext
-```
-
-The app falls back to `pdf2json` when `pdftotext` is unavailable, but some PDFs with custom embedded fonts parse much more cleanly through Poppler.
-
-Optional model overrides:
-
-```bash
-GEMINI_EMBEDDING_MODEL=gemini-embedding-001
-GEMINI_GENERATION_MODEL=gemini-flash-lite-latest
-```
+![Experience list: two indexed files, each with its six-stage progress dots](docs/images/experience-list.png)
 
 ## How the evidence index works
 
@@ -64,6 +71,8 @@ flowchart LR
 3. **Parse.** Gemini reads the blocks and proposes a structured draft: one or more *experiences* (a named project, or general experience such as role responsibilities), each with source-backed fields (title, role, technologies) and *evidence items* of kind `background`, `responsibility`, `contribution`, `challenge`, `decision` or `outcome`. The model must quote the source for every value. The app resolves each quote to exact offsets in a block and rejects anything that isn't a unique verbatim match. The result is saved as a `draft` row in `experience_revisions`, with the model and prompt version that produced it.
 
 4. **Review.** Your edits update the same revision row's `draft_json`, bumping `draft_version` so two stale tabs can't overwrite each other.
+
+   ![Review stage: the source document on the left with every evidence span underlined, the approval checklist and source-backed fields on the right](docs/images/experience-review.png)
 
 5. **Approve.** The revision row gets its `approved_json`, a content hash and `approved_at`, and its status becomes `approved`. From here it is frozen: a later edit creates a *new* draft revision copied from this one, rather than changing it.
 
@@ -119,6 +128,8 @@ flowchart TD
 
 A citation resolves a handle to the file, revision, experience, evidence item and `{ block_id, start, end }` span, and its `quote` is the chunk's `child_text`. "Open in source" uses that span to highlight the sentence in the file.
 
+![Open in source: the cited sentence outlined in the approved source document](docs/images/open-in-source.png)
+
 ### Table reference
 
 | Table | Group | One row per | Holds |
@@ -141,37 +152,67 @@ The original file bytes live in the private `experience-sources` storage bucket,
 - **The approval gate** means nothing unreviewed can be retrieved, and nothing retrieved can drift from what you approved.
 - **Logical IDs** (experience, parent, chunk) stay stable across re-indexing, so citations keep resolving after a file is updated.
 
-## Getting Started
+## Evaluation and quality
 
-### Supabase MCP
+[`app/lib/ragQualityEvals/`](app/lib/ragQualityEvals/) measures what unit tests can't: whether a report finds the requirements a human would, retrieves and cites the right approved evidence, keeps gaps visible, and ignores look-alike passages. It runs in two modes over the same synthetic fixtures (strong match, partial match, missing evidence, distractor-heavy, prompt injection, and active vs latest version):
 
-To let your agent or IDE inspect the database, connect it to the project-scoped,
-read-only Supabase MCP server:
+- **Offline (deterministic).** Runs the real JD-fit pipeline (validation, downgrades, citation resolution and gap listing) with a scripted model and scripted search. It needs no network or keys, produces byte-identical reports, and runs in CI with exact thresholds.
+- **Live (opt-in).** Runs real Gemini and real approved search against a seeded synthetic corpus, with permissive starting thresholds that are tightened only after recorded runs. It never runs in CI.
 
+| Metric | Measures |
+| --- | --- |
+| `requirement_recall` | Expected requirements extracted with the right importance |
+| `unsupported_requirements` | Requirements the JD doesn't support, such as injected text (count) |
+| `retrieval_recall` | Expected evidence passages retrieved for their requirement |
+| `distractor_precision` | Expected passages retrieved, over expected plus look-alike passages |
+| `ingestion_coverage` | Expected passages covered by approved evidence |
+| `citation_validity` | Positive claims whose citation matches expected evidence |
+| `unsupported_positive_claims` | Expected gaps reported as Strong or Partial (count; must be 0 in both modes) |
+| `gap_visibility` | Expected gaps listed in the report's gaps |
+
+The offline eval, the three unit suites, the Playwright browser test and the Docker image check are all required CI checks on `main` (see [Branches and CI](#branches-and-ci)). Fixture format, thresholds, failure categories and the live workflow are documented in the [eval README](app/lib/ragQualityEvals/README.md).
+
+## Running locally
+
+### Prerequisites
+
+- **Node.js 26** (the version in [`.nvmrc`](.nvmrc); run `nvm use`).
+- **A Supabase project** with the pgvector extension available.
+- **A Gemini API key** from [Google AI Studio](https://aistudio.google.com/).
+- **Poppler** (optional, recommended): `brew install poppler` or `apt-get install poppler-utils`, for cleaner PDF text.
+
+### Environment
+
+Create `.env.local` with:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+GEMINI_API_KEY=your-google-ai-studio-key
 ```
-https://mcp.supabase.com/mcp?project_ref=lwljmmfcvmbnrfstltzj&read_only=true
+
+`GOOGLE_API_KEY` also works if you prefer that variable name. The app uses `gemini-embedding-001` with `outputDimensionality: 1536`, so it can use the existing Supabase `embedding vector(1536)` schema.
+
+`SUPABASE_SERVICE_ROLE_KEY` is required by the server API routes for experience ingestion, deletes, private storage access, and vector search. Keep it server-only; never prefix it with `NEXT_PUBLIC_`.
+
+For more reliable PDF parsing, install Poppler and expose its `pdftotext` binary. If it is not on `PATH`, set:
+
+```bash
+PDFTOTEXT_PATH=/absolute/path/to/pdftotext
 ```
 
-Authenticate using the Supabase login flow when prompted, selecting the
-organization that owns this project. Do not put the application's service-role
-key in any MCP configuration, and never commit credentials.
+The app falls back to `pdf2json` when `pdftotext` is unavailable, but some PDFs with custom embedded fonts parse much more cleanly through Poppler.
 
-Verify the connection by asking: "Use Supabase MCP to list this project's
-tables." Remove `&read_only=true` only when you intentionally need write
-access, such as applying migrations, and use a development project rather
-than production.
+Optional model overrides:
 
-See the [Supabase MCP documentation](https://supabase.com/docs/guides/getting-started/mcp).
+```bash
+GEMINI_EMBEDDING_MODEL=gemini-embedding-001
+GEMINI_GENERATION_MODEL=gemini-flash-lite-latest
+```
 
 ### Database setup
 
-Apply the SQL files in `supabase/migrations/` in filename order, using the
-Supabase SQL editor or the MCP `apply_migration` tool with write access enabled
-on a development project. Do not reapply migrations already recorded there.
-Together they create the seven tables described above, the search and
-publication functions, the private `experience-sources` bucket, and a cosine
-HNSW index on `document_chunks`. pgvector may live in either `public` or
-`extensions`.
+Apply the SQL files in `supabase/migrations/` in filename order, using the Supabase SQL editor, or the Supabase MCP `apply_migration` tool with write access enabled on a development project ([docs/development.md](docs/development.md)). Do not reapply migrations already recorded there. Together they create the seven tables described above, the search and publication functions, the private `experience-sources` bucket, and a cosine HNSW index on `document_chunks`. pgvector may live in either `public` or `extensions`.
 
 Every table has RLS enabled with no browser policies, and every function is
 granted only to `service_role`. Never call them from client components or
@@ -182,32 +223,20 @@ expose the service-role key.
 drops the evidence model entirely; use it only after confirming no evidence
 data needs preserving.
 
-The retired generic document search left a `documents` table, a
-`match_documents` function and a `documents` bucket on the remote project.
-Nothing references them, they were created outside `supabase/migrations/`,
-and they are kept only until a separate decommission drops them.
-
-First, run the development server:
+### Run
 
 ```bash
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000), upload an experience file on the Experience page, approve and index it, then paste a job description on Fit Check.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to load Nunito Sans (headings) and Source Sans 3 (body text) from Google Fonts.
-
-See the [Next.js documentation](https://nextjs.org/docs) for framework details.
+The checks CI runs are listed under [Branches and CI](#branches-and-ci). `npm run capture:screenshots` regenerates the README images from synthetic data. Agent and IDE tooling (Supabase MCP), legacy remote objects and verification reports are in [docs/development.md](docs/development.md).
 
 ## Deploying
 
-The app is hosted on Google Cloud Run in project `jd-fit-check` (`australia-southeast1`). Identity-Aware Proxy lets in only the owner's Google account, and every push to `main` that passes CI deploys automatically. One-time setup, IAP, rollback and secret rotation are in [docs/deploy.md](docs/deploy.md).
+The app runs on Google Cloud Run in `australia-southeast1`. Identity-Aware Proxy lets in only the owner's Google account, and every push to `main` that passes CI deploys automatically through keyless Workload Identity Federation. One-time setup, IAP, rollback and secret rotation are in [docs/deploy.md](docs/deploy.md).
 
 ## Branches and CI
 

@@ -192,7 +192,7 @@ Environment limitations: automated tests mock Gemini and Supabase, so they prove
 
 ### Browser walkthrough (task 6.4), 2026-11-13
 
-- **Server and URL.** The user's already-running `next dev` server at `http://localhost:3000`, which serves this workspace with hot reload and targets remote Supabase project `lwljmmfcvmbnrfstltzj`. A second dev server was not started because port 3000 was in use.
+- **Server and URL.** The user's already-running `next dev` server at `http://localhost:3000`, which serves this workspace with hot reload and targets remote Supabase project `<project-ref>`. A second dev server was not started because port 3000 was in use.
 - **Data.** Two existing experience sources with active indexed revisions were used. No file was uploaded, and nothing was created or deleted; both sources kept their previous `updated_at` values.
 - **Steps and observed results:**
   1. The Search page opened in generic mode with a "Search documents" / "JD fit" switch. A generic query was typed but not submitted.

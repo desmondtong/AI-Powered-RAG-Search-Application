@@ -2,7 +2,7 @@
 
 Date: 2026-10-29
 Change: `add-structured-project-ingestion`
-Project: `lwljmmfcvmbnrfstltzj`
+Project: `<project-ref>`
 Access: Supabase MCP; project URL confirmed against the application's configuration.
 
 ## Result

@@ -1,8 +1,8 @@
 # 远程 Supabase 验证报告
 
 日期：2026-11-11
-项目：`lwljmmfcvmbnrfstltzj`
-URL：`https://lwljmmfcvmbnrfstltzj.supabase.co`
+项目：`<project-ref>`
+URL：`https://<project-ref>.supabase.co`
 OpenSpec：`add-structured-project-ingestion`
 
 ## 结论

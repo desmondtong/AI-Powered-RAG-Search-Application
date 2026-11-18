@@ -102,7 +102,7 @@ Before embedding preparation, `freezeApprovedExperienceIndexPlan()` validates th
 
 ## Database And Storage Setup
 
-The original deployment order is listed below for traceability. These migrations already exist on remote project `lwljmmfcvmbnrfstltzj`; do not replay them. The retry-policy follow-up leaves the local database untouched and does not authorize `supabase db push`, schema deployment, or migration-history repair. Any future database work requires separate authorization and explicit remote-target confirmation.
+The original deployment order is listed below for traceability. These migrations already exist on remote project `<project-ref>`; do not replay them. The retry-policy follow-up leaves the local database untouched and does not authorize `supabase db push`, schema deployment, or migration-history repair. Any future database work requires separate authorization and explicit remote-target confirmation.
 
 1. `20261028000100_evidence_tables.sql`
 2. `20261028000200_evidence_search.sql`
@@ -236,7 +236,7 @@ Runtime defaults are intentionally bounded:
 | Retained source block | 2,000 UTF-16 code units |
 Set `PDFTOTEXT_PATH` when Poppler is installed outside the default lookup path. A missing Poppler binary is not fatal because selectable PDFs can use the `pdf2json` fallback.
 
-The existing database smoke assets are listed below; these are SQL files, not shell commands. Any future execution requires separate authorization, confirmation of remote project `lwljmmfcvmbnrfstltzj` through Supabase MCP, and rollback-only synthetic fixtures. Do not run them against the local database.
+The existing database smoke assets are listed below; these are SQL files, not shell commands. Any future execution requires separate authorization, confirmation of remote project `<project-ref>` through Supabase MCP, and rollback-only synthetic fixtures. Do not run them against the local database.
 
 ```bash
 supabase/checks/experience_registry.sql
@@ -248,7 +248,7 @@ supabase/checks/experience_index_fencing.sql
 
 The current `@supabase/supabase-js` version expects Node 22+ for native WebSocket support in direct Node scripts. Use the project runtime's supported Node version, or provide the documented Supabase realtime transport option before running live storage smoke scripts under older Node.
 
-`experience_index_fencing.sql` runs as `service_role` and rolls back its synthetic rows. It verifies rejection of expired/replaced tokens, current-token staging and publication, tokenless-publication rejection, and atomic lease consumption on publication/retry. Remote deployment and verification on 2026-10-29 are recorded in [supabase-remote-alignment.md](../../../supabase-remote-alignment.md), including the pre-existing migration-history mismatch that must be reconciled before CLI push/pull.
+`experience_index_fencing.sql` runs as `service_role` and rolls back its synthetic rows. It verifies rejection of expired/replaced tokens, current-token staging and publication, tokenless-publication rejection, and atomic lease consumption on publication/retry. Remote deployment and verification on 2026-10-29 are recorded in [supabase-remote-alignment.md](../../../docs/verification/supabase-remote-alignment.md), including the pre-existing migration-history mismatch that must be reconciled before CLI push/pull.
 
 ## Acceptance Evidence
 
@@ -270,7 +270,7 @@ Synthetic database rows and private storage objects in this acceptance run are i
 
 ### Retry-policy follow-up (2026-11-11)
 
-The [follow-up verification report](../../../supabase-retry-policy-verification-2026-11-11.md) records separately authorized API/UI fixes, 123 passing database-free tests, four passing browser conflict scenarios, lint/type/build results, and remote rollback assertions. The [original remote report](../../../supabase-remote-verification-2026-11-11.md) remains historical evidence: rejection of superseded retries is intentional under the revised policy, not a newly implemented database fix.
+The [follow-up verification report](../../../docs/verification/supabase-retry-policy-verification-2026-11-11.md) records separately authorized API/UI fixes, 123 passing database-free tests, four passing browser conflict scenarios, lint/type/build results, and remote rollback assertions. The [original remote report](../../../docs/verification/supabase-remote-verification-2026-11-11.md) remains historical evidence: rejection of superseded retries is intentional under the revised policy, not a newly implemented database fix.
 
 Repository SQL checks are `supabase/checks/experience_retry_policy.sql`, `experience_retry_guards.sql`, and `experience_retry_lifecycle.sql`. Their target-confirmed remote runs ended with `ROLLBACK`; all nine persistent database/Storage metadata fingerprints matched the baseline. No migrations or migration-history entries changed.
 

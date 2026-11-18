@@ -25,7 +25,7 @@ the policy alone does not establish application or database acceptance.
 ## Preflight (11.1)
 
 - MCP `get_project_url` returned exactly
-  `https://lwljmmfcvmbnrfstltzj.supabase.co`.
+  `https://<project-ref>.supabase.co`.
 - All SQL goes through that project-bound Supabase MCP connection. SQL
   `app.settings.project_ref` is unavailable (NULL), so it is not used to claim
   target identity. A matching MCP URL is required before each fixture execution.
@@ -58,20 +58,20 @@ the policy alone does not establish application or database acceptance.
 
 ## Verification Assets
 
-- [experience_retry_policy.sql](supabase/checks/experience_retry_policy.sql): current retry and both
+- [experience_retry_policy.sql](../../supabase/checks/experience_retry_policy.sql): current retry and both
   newer-approval/newer-publication windows for published and unpublished older
   revisions. Uses random synthetic source identity, finite statement/lock
   timeouts, an exception subtransaction, an explicit PASS/FAIL result, and a final
   `ROLLBACK`. No persistent schema objects or helper functions are created.
 - Existing migrations/checks remain unchanged; no migration is replayed.
-- [experience_retry_guards.sql](supabase/checks/experience_retry_guards.sql): 31 independently isolated
+- [experience_retry_guards.sql](../../supabase/checks/experience_retry_guards.sql): 31 independently isolated
   current-version invalid-token/parameter/ownership/live-evidence checks.
-- [experience_retry_lifecycle.sql](supabase/checks/experience_retry_lifecycle.sql): multi-parent failure,
+- [experience_retry_lifecycle.sql](../../supabase/checks/experience_retry_lifecycle.sql): multi-parent failure,
   replacement, retained approval history, deletion, and server-only access.
-- Application checks: [indexing.test.ts](app/lib/experience/indexing.test.ts),
-  [crossWorkflowAcceptance.test.ts](app/lib/experience/crossWorkflowAcceptance.test.ts),
-  and [retryConflicts.browser.mjs](app/lib/experience/retryConflicts.browser.mjs).
-- Updated implementation contract: [README.md](app/lib/experience/README.md).
+- Application checks: [indexing.test.ts](../../app/lib/experience/indexing.test.ts),
+  [crossWorkflowAcceptance.test.ts](../../app/lib/experience/crossWorkflowAcceptance.test.ts),
+  and [retryConflicts.browser.mjs](../../app/lib/experience/retryConflicts.browser.mjs).
+- Updated implementation contract: [README.md](../../app/lib/experience/README.md).
 
 ## Baseline
 

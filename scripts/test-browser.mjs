@@ -1,6 +1,6 @@
-// Builds the app, serves it on a loopback port, runs the browser conflict
-// scenarios against it, and always stops the server. Exit code is the
-// script's. With EXPERIENCE_PREVIEW_URL set, only the script runs.
+// Builds the app, serves it on a loopback port, runs every browser script
+// against it in order, and always stops the server. Exit code is the first
+// failing script's. With EXPERIENCE_PREVIEW_URL set, only the scripts run.
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { existsSync } from "node:fs";
@@ -9,7 +9,9 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nextBin = path.join(root, "node_modules", ".bin", "next");
-const script = path.join(root, "app", "lib", "experience", "retryConflicts.browser.mjs");
+const scripts = ["retryConflicts.browser.mjs", "shell.browser.mjs"].map((name) =>
+  path.join(root, "app", "lib", "experience", name),
+);
 const port = Number(process.env.EXPERIENCE_PREVIEW_PORT || 3033);
 const previewUrl = process.env.EXPERIENCE_PREVIEW_URL;
 const READY_TIMEOUT_MS = 60_000;
@@ -49,11 +51,19 @@ async function stop(server) {
 }
 
 async function main() {
-  if (!existsSync(script)) throw new Error(`Browser script not found: ${script}`);
+  for (const script of scripts) {
+    if (!existsSync(script)) throw new Error(`Browser script not found: ${script}`);
+  }
+  const runScripts = async (extraEnv = {}) => {
+    for (const script of scripts) {
+      console.log(`Running ${path.basename(script)}...`);
+      await run(process.execPath, [script], path.basename(script), extraEnv);
+    }
+  };
 
   if (previewUrl) {
     console.log(`Using running preview at ${previewUrl}`);
-    await run(process.execPath, [script], "browser script");
+    await runScripts();
     return;
   }
 
@@ -73,7 +83,7 @@ async function main() {
 
   try {
     await waitForServer(url, server);
-    await run(process.execPath, [script], "browser script", { EXPERIENCE_PREVIEW_URL: url });
+    await runScripts({ EXPERIENCE_PREVIEW_URL: url });
   } finally {
     process.off("SIGINT", onSignal);
     process.off("SIGTERM", onSignal);

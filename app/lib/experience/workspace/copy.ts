@@ -5,7 +5,7 @@
  * - label: names a state. Always shown.
  * - instruction: the next step. Shown only while there is one.
  * - fact: the one state-specific fact worth stating.
- * - explanation: how the product works. Shown only in "How it works" and the Fit Check empty state, never in a
+ * - explanation: how the product works. Shown only on the Help page and in the Fit Check empty state, never in a
  *   stage helper, row or subtitle. `EXPLANATIONS` lists them so tests can enforce that.
  */
 
@@ -18,6 +18,25 @@ function plural(count: number, one: string, many: string) {
 export const NAV = {
   fitCheck: "Fit Check",
   experience: "Experience",
+  help: "Help",
+} as const;
+
+export const ACCOUNT_MENU = {
+  /** Accessible name of the avatar when no signed-in identity is available (local runs). */
+  anonymousLabel: "Account",
+  signedInLabel: (email: string) => `Account: ${email}`,
+  settings: "Settings",
+} as const;
+
+export const SETTINGS_PAGE = {
+  title: "Settings",
+  appearanceTitle: "Appearance",
+  appearanceHint: "Saved in this browser only.",
+  options: {
+    auto: { label: "Auto", description: "Match your device's light or dark setting." },
+    light: { label: "Light", description: "Always use the light theme." },
+    dark: { label: "Dark", description: "Always use the dark theme." },
+  },
 } as const;
 
 export function indexedPill(count: number): string {
@@ -27,7 +46,7 @@ export function indexedPill(count: number): string {
 export const STAGE_NAMES = ["Upload", "Extract", "Parse", "Review", "Approve", "Index"] as const;
 export type StageName = (typeof STAGE_NAMES)[number];
 
-/** Explanations: one sentence per stage. Rendered only by "How it works" and the Fit Check empty state. */
+/** Explanations: one sentence per stage. Rendered only by the Help page's Experience section and the Fit Check empty state. */
 export const HOW_IT_WORKS: ReadonlyArray<{ name: StageName; description: string }> = [
   { name: "Upload", description: "Your file is kept privately and nothing is searchable yet." },
   { name: "Extract", description: "Text is pulled out and frozen as the source of every citation." },

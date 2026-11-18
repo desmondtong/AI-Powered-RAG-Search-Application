@@ -2,7 +2,7 @@
 
 The app runs on **Cloud Run** in the Google Cloud project `jd-fit-check`, region `australia-southeast1` (Sydney), next to the Supabase project in `ap-southeast-2`.
 - **Supabase** keeps the database, vector search and source files. Gemini is called with an AI Studio key.
-- **Access:** Identity-Aware Proxy (IAP) admits only the owner's Google account. The app has no login of its own, and its server uses the Supabase service-role key.
+- **Access:** Identity-Aware Proxy (IAP) admits only the owner's Google account. The app has no login of its own, and its server uses the Supabase service-role key. The top bar's account avatar reads the email IAP forwards in `x-goog-authenticated-user-email` for display only; no page or API decision depends on it.
 - **Deploys:** every push to `main` that passes CI is built into a container and deployed automatically by the `deploy` job in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml).
 
 ```

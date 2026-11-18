@@ -93,7 +93,7 @@ export function Pill({ tone = "neutral", className = "", children }: { tone?: Pi
 }
 
 /**
- * The app's one disclosure pattern ("How it works", report diagnostics): a label-caps trigger with a chevron and
+ * The app's one disclosure pattern (report diagnostics): a label-caps trigger with a chevron and
  * `aria-expanded`, over a panel whose height animates unless the user prefers reduced motion. Open state is per page.
  */
 export function Disclosure({

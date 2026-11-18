@@ -1,11 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useNotice } from "@/app/components/NoticeProvider";
 import { useWorkspaceSummary } from "@/app/components/WorkspaceSummaryProvider";
 import { EXPERIENCE_PAGE } from "@/app/lib/experience/workspace/copy";
 import DropZone from "./_components/DropZone";
 import ExperienceRow from "./_components/ExperienceRow";
-import HowItWorks from "./_components/HowItWorks";
 import { IN_PROGRESS_STATUSES, usePolling } from "./_components/usePolling";
 import { useStageTransitions } from "./_components/useStageTransitions";
 import { Button } from "./_components/ui";
@@ -49,9 +49,12 @@ export default function ExperienceListPage() {
         )}
       </section>
 
-      <div className="mt-8">
-        <HowItWorks />
-      </div>
+      {/* The six-stage explanation lives on the Help page; the list only links to it. */}
+      <p className="mt-8 text-body-md">
+        <Link href="/help#experience" className="font-semibold text-cobalt hover:text-cobalt-hover hover:underline">
+          {EXPERIENCE_PAGE.howItWorks}
+        </Link>
+      </p>
     </main>
   );
 }

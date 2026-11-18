@@ -2,121 +2,75 @@
 
 /*
  * JD Fit Check · Porcelain & Cobalt.
- * Every colour is a semantic token. Light values live on :root; the dark set overrides them when the operating
- * system prefers a dark scheme. Components use only the utilities mapped in @theme below, never `dark:` variants
- * or literal hex values, so switching theme is a token swap.
+ * Every colour is a semantic token defined once as light-dark(light value, dark value). Which value applies follows
+ * `color-scheme`: on Auto (no data-theme) the operating system decides; the appearance setting forces one scheme by
+ * setting data-theme on <html> before first paint. Components use only the utilities mapped in @theme below, never
+ * `dark:` variants or literal hex values, so switching theme is a token swap.
  *
  * Semantic jobs: cobalt = actions and sourced evidence; sand = unassigned text; amber = needs attention;
  * green = done; red = destructive or failed only.
  */
 :root {
-  color-scheme: light;
+  /* Auto: follow the operating system. data-theme="light" or "dark" on <html> forces one scheme. */
+  color-scheme: light dark;
 
-  --ground: #f4f6f9;
-  --card: #ffffff;
-  --raised: #ffffff;
-  --raised-shadow: 0 8px 24px rgba(17, 24, 39, 0.08);
-  --subtle: #fafbfd;
-  --hairline: #d5dbe5;
-  --hairline-strong: #94a3b8;
+  --ground: light-dark(#f4f6f9, #0f1218);
+  --card: light-dark(#ffffff, #151a24);
+  --raised: light-dark(#ffffff, #19212e);
+  --raised-shadow: 0 8px 24px light-dark(rgba(17, 24, 39, 0.08), rgba(0, 0, 0, 0.4));
+  --subtle: light-dark(#fafbfd, #19212e);
+  --hairline: light-dark(#d5dbe5, #252f3f);
+  --hairline-strong: light-dark(#94a3b8, #2e3b4e);
 
-  --ink: #111827;
-  --ink-secondary: #475569;
-  --ink-muted: #64748b;
-  --ink-subtle: #94a3b8;
+  --ink: light-dark(#111827, #e4e8ee);
+  --ink-secondary: light-dark(#475569, #98a5b7);
+  --ink-muted: light-dark(#64748b, #7d8a9c); /* dark AA on card, ground and subtle; design value #657285 was 3.57:1 on card */
+  --ink-subtle: light-dark(#94a3b8, #657285);
 
-  --cobalt: #1f3a93;
-  --cobalt-hover: #172e77;
-  --on-cobalt: #ffffff;
+  --cobalt: light-dark(#1f3a93, #6f8be8);
+  --cobalt-hover: light-dark(#172e77, #5c79da);
+  --on-cobalt: light-dark(#ffffff, #0b1019);
 
-  --evidence-wash: #e8eeff;
-  --evidence-border: #88a5e8;
-  --evidence-text: #162c6e;
+  --evidence-wash: light-dark(#e8eeff, rgba(111, 139, 232, 0.16));
+  --evidence-border: light-dark(#88a5e8, #6f8be8);
+  --evidence-text: light-dark(#162c6e, #e4e8ee);
 
-  --sand-wash: #f9f4eb;
-  --sand-border: #e4d5bc;
-  --sand-label: #86662d; /* AA on sand wash (4.85:1); design value #8d6b30 was 4.48:1 */
+  --sand-wash: light-dark(#f9f4eb, rgba(220, 190, 140, 0.12));
+  --sand-border: light-dark(#e4d5bc, rgba(220, 190, 140, 0.28));
+  --sand-label: light-dark(#86662d, #dcc296); /* light AA on sand wash (4.85:1); design value #8d6b30 was 4.48:1 */
 
-  --amber: #d97706;
-  --amber-wash: #fef3c7;
-  --amber-border: #fde68a;
-  --amber-text: #92400e;
+  --amber: light-dark(#d97706, #e0a045);
+  --amber-wash: light-dark(#fef3c7, rgba(224, 160, 69, 0.12));
+  --amber-border: light-dark(#fde68a, rgba(224, 160, 69, 0.3));
+  --amber-text: light-dark(#92400e, #e0a045);
 
-  --green: #15803d;
-  --green-wash: #dcfce7;
-  --green-border: #bbf7d0;
+  --green: light-dark(#15803d, #52b788);
+  --green-wash: light-dark(#dcfce7, rgba(82, 183, 136, 0.14));
+  --green-border: light-dark(#bbf7d0, rgba(82, 183, 136, 0.3));
 
-  --red: #c81e1e; /* AA for red text on red wash (4.7:1); design value #dc2626 was 3.95:1 */
-  --red-wash: #fee2e2;
-  --red-border: #fecaca;
+  --red: light-dark(#c81e1e, #e56b6f); /* light AA for red text on red wash (4.7:1); design value #dc2626 was 3.95:1 */
+  --red-wash: light-dark(#fee2e2, rgba(229, 107, 111, 0.14));
+  --red-border: light-dark(#fecaca, rgba(229, 107, 111, 0.3));
 
-  --disabled-bg: #e2e8f0;
-  --disabled-text: #94a3b8;
+  --disabled-bg: light-dark(#e2e8f0, #181f2c);
+  --disabled-text: light-dark(#94a3b8, #657285);
 
-  --fit-strong: #15803d;
-  --fit-strong-wash: #dcfce7;
-  --fit-partial: #b45309;
-  --fit-partial-wash: #fef3c7;
-  --fit-weak: #475569;
-  --fit-weak-wash: #e6eaf0;
-  --fit-missing: #991b1b;
-  --fit-missing-wash: #fee2e2;
+  --fit-strong: light-dark(#15803d, #52b788);
+  --fit-strong-wash: light-dark(#dcfce7, rgba(82, 183, 136, 0.14));
+  --fit-partial: light-dark(#b45309, #e0a045);
+  --fit-partial-wash: light-dark(#fef3c7, rgba(224, 160, 69, 0.12));
+  --fit-weak: light-dark(#475569, #98a5b7);
+  --fit-weak-wash: light-dark(#e6eaf0, rgba(152, 165, 183, 0.12));
+  --fit-missing: light-dark(#991b1b, #e56b6f);
+  --fit-missing-wash: light-dark(#fee2e2, rgba(229, 107, 111, 0.12));
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
+:root[data-theme="light"] {
+  color-scheme: light;
+}
 
-    --ground: #0f1218;
-    --card: #151a24;
-    --raised: #19212e;
-    --raised-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-    --subtle: #19212e;
-    --hairline: #252f3f;
-    --hairline-strong: #2e3b4e;
-
-    --ink: #e4e8ee;
-    --ink-secondary: #98a5b7;
-    --ink-muted: #7d8a9c; /* AA on card, ground and subtle; design value #657285 was 3.57:1 on card */
-    --ink-subtle: #657285;
-
-    --cobalt: #6f8be8;
-    --cobalt-hover: #5c79da;
-    --on-cobalt: #0b1019;
-
-    --evidence-wash: rgba(111, 139, 232, 0.16);
-    --evidence-border: #6f8be8;
-    --evidence-text: #e4e8ee;
-
-    --sand-wash: rgba(220, 190, 140, 0.12);
-    --sand-border: rgba(220, 190, 140, 0.28);
-    --sand-label: #dcc296;
-
-    --amber: #e0a045;
-    --amber-wash: rgba(224, 160, 69, 0.12);
-    --amber-border: rgba(224, 160, 69, 0.3);
-    --amber-text: #e0a045;
-
-    --green: #52b788;
-    --green-wash: rgba(82, 183, 136, 0.14);
-    --green-border: rgba(82, 183, 136, 0.3);
-
-    --red: #e56b6f;
-    --red-wash: rgba(229, 107, 111, 0.14);
-    --red-border: rgba(229, 107, 111, 0.3);
-
-    --disabled-bg: #181f2c;
-    --disabled-text: #657285;
-
-    --fit-strong: #52b788;
-    --fit-strong-wash: rgba(82, 183, 136, 0.14);
-    --fit-partial: #e0a045;
-    --fit-partial-wash: rgba(224, 160, 69, 0.12);
-    --fit-weak: #98a5b7;
-    --fit-weak-wash: rgba(152, 165, 183, 0.12);
-    --fit-missing: #e56b6f;
-    --fit-missing-wash: rgba(229, 107, 111, 0.12);
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 @theme inline {

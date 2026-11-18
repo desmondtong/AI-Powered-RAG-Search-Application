@@ -11,7 +11,6 @@ function listSurface() {
     "app/experience/page.tsx",
     "app/experience/_components/DropZone.tsx",
     "app/experience/_components/ExperienceRow.tsx",
-    "app/experience/_components/HowItWorks.tsx",
   ].map((path) => ({ path, text: read(path) }));
 }
 
@@ -66,14 +65,13 @@ describe("experience list page contracts", () => {
     assert.match(row, /<DotStepper/);
   });
 
-  it("explains the six stages once, in a collapsed How it works disclosure", () => {
+  it("links to the Help page for the six-stage explanation instead of explaining it on the list", () => {
     const page = read("app/experience/page.tsx");
     assert.equal(existsSync(join(process.cwd(), "app/experience/_components/StageLegend.tsx")), false);
-    assert.equal((page.match(/<HowItWorks \/>/g) ?? []).length, 1);
-    const howItWorks = read("app/experience/_components/HowItWorks.tsx");
-    assert.match(howItWorks, /<Disclosure\b/);
-    assert.doesNotMatch(howItWorks, /defaultOpen/, "collapsed by default");
-    assert.doesNotMatch(page, /subtitle|HOW_IT_WORKS/, "no subtitle and no inline stage explanation on the page");
+    assert.equal(existsSync(join(process.cwd(), "app/experience/_components/HowItWorks.tsx")), false);
+    assert.equal((page.match(/href="\/help#experience"/g) ?? []).length, 1);
+    assert.match(page, /EXPERIENCE_PAGE\.howItWorks/);
+    assert.doesNotMatch(page, /subtitle|HOW_IT_WORKS|<Disclosure\b/, "no subtitle and no stage explanation on the page");
   });
 
   it("opens the file page from anywhere on the row except its controls, and shows no button for quiet states", () => {

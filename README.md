@@ -4,10 +4,12 @@ A personal job-fit tool built on [Next.js](https://nextjs.org). You upload your 
 
 ## Pages
 
-The top bar has two destinations and a pill counting the indexed files.
+The top bar has three destinations, a pill counting the indexed files, and an account avatar whose menu opens Settings.
 
 - **Fit Check** (`/`). Paste a job description and choose "Evaluate fit". The report groups requirements as Strong, Partial, Weak or Missing and cites the exact sentence in your file for every claim. "Open in source" opens that sentence on the file's page.
-- **Experience** (`/experience`). Upload a DOCX or selectable-text PDF in the "Upload experience file" drop zone. Each file then has its own page, `/experience/[id]`, that walks it through six stages: Upload, Extract, Parse, Review, Approve and Index. Indexing starts only when you choose "Index now". A collapsed "How it works" section on the list explains the stages.
+- **Experience** (`/experience`). Upload a DOCX or selectable-text PDF in the "Upload experience file" drop zone. Each file then has its own page, `/experience/[id]`, that walks it through six stages: Upload, Extract, Parse, Review, Approve and Index. Indexing starts only when you choose "Index now". The list's "How it works" link opens the stage explanation on the Help page.
+- **Help** (`/help`). How to use each feature: Fit Check, the six Experience stages and Settings, with an "On this page" list. New features add their how-to here.
+- **Settings** (`/settings`, from the account menu). Appearance: Auto (follows your device, the default), Light or Dark, saved in the browser.
 
 ## Environment
 

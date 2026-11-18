@@ -150,3 +150,12 @@ export function BoltIcon(props: IconProps) {
     </Icon>
   );
 }
+
+export function PersonIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4.5 20.5c1.2-3.6 4.1-5.5 7.5-5.5s6.3 1.9 7.5 5.5" />
+    </Icon>
+  );
+}

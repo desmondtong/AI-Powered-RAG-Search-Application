@@ -1,9 +1,14 @@
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { Nunito_Sans, Source_Sans_3 } from "next/font/google";
+import { APPEARANCE_HEAD_SCRIPT } from "./lib/experience/workspace/appearance";
+import { AvatarPlaceholder } from "./components/AccountMenu";
+import AccountSlot from "./components/AccountSlot";
+import { InlineScript } from "./components/InlineScript";
 import { LeaveGuardProvider } from "./components/LeaveGuardProvider";
 import { NoticeProvider } from "./components/NoticeProvider";
 import TopBar from "./components/TopBar";
+import { AppearanceSync } from "./components/useAppearance";
 import { WorkspaceSummaryProvider } from "./components/WorkspaceSummaryProvider";
 import "./globals.css";
 
@@ -24,12 +29,23 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${headingFont.variable} ${bodyFont.variable} h-full antialiased`}>
+    // The head script sets data-theme on <html> before React hydrates, so React must accept that attribute.
+    <html lang="en" className={`${headingFont.variable} ${bodyFont.variable} h-full antialiased`} suppressHydrationWarning>
+      <head>
+        <InlineScript html={APPEARANCE_HEAD_SCRIPT} />
+      </head>
       <body className="min-h-full flex flex-col bg-ground text-ink font-body">
+        <AppearanceSync />
         <LeaveGuardProvider>
           <NoticeProvider>
             <WorkspaceSummaryProvider>
-              <TopBar />
+              <TopBar
+                account={
+                  <Suspense fallback={<AvatarPlaceholder />}>
+                    <AccountSlot />
+                  </Suspense>
+                }
+              />
               <div className="flex-1">{children}</div>
             </WorkspaceSummaryProvider>
           </NoticeProvider>
